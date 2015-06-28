@@ -13,14 +13,15 @@
 #ifndef _Included_AudioSync_stream
 #define _Included_AudioSync_stream
 
-#include <android/audio_utils/fifo.h>
+#include "audiosync_fifo.h"
 
 // Opaque pointer
 typedef struct audiosync_context;
 
 void audiosync_addClient(audiosync_context*, const char* host);
 void audiosync_startSending(audiosync_context*, void* todo);
-void audiosync_startReceiving(audiosync_context*, const char*, audio_utils_fifo *);
+// TODO interrupted callback
+void audiosync_startReceiving(audiosync_context*, const char*, audiosync_fifo *);
 void audiosync_stop(audiosync_context *);
 
 ##endif

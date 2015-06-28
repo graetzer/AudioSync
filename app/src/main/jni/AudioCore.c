@@ -67,10 +67,9 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
  * Method:    stopPlayback
  * Signature: (Ljava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback
-  (JNIEnv *env, jobject thiz) {
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback (JNIEnv *env, jobject thiz) {
 
-  }
+}
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -217,6 +216,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startList
  }
 
  void startPlayback() {
+ // TODO put the init code somewehere ese
     // 2 bytes per sample
     sample_fifo_buffer = calloc(global_bufsize * sizeof(uint16_t));
     assert(sample_fifo_buffer);
@@ -225,6 +225,14 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startList
     // set the player's state to playing
     SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
     assert(SL_RESULT_SUCCESS == result);
+ }
+
+ void stopPlayback() {
+    SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_STOPPED);
+    assert(SL_RESULT_SUCCESS == result);
+
+    audio_utils_fifo_deinit(&sample_fifo);
+    free(sample_fifo_buffer);
  }
 
  // shut down the native audio system

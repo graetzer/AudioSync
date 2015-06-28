@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include <android/log.h>
 
+#include "audiosync_fifo.c"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)
 #define SNTP_PORT 32442
@@ -115,12 +116,6 @@ void _controlNetworkRoutine(void *ctxPtr) {
     return NULL;
 }
 
-typedef struct {
-    uint16_t seqnum;
-    uint32_t timestamp;
-    uint16_t data[1];// Actually variable length
-} __attribute__ ((__packed__)) audiosync_data_package;
-
 // Packet format: [2 bytes, sequence number][]
 
 void _dataNetworkRoutine(void *ctxPtr) {
@@ -139,7 +134,7 @@ void _dataNetworkRoutine(void *ctxPtr) {
             if (recvlen == -1) {
                 debugLog("Error while receiving");
                 break;
-            } else if (recvlen < 2) continue;
+            } else if (recvlen < sizeof()) continue;
 
             u_short seq_num = ntohs(buf[0] << 8 | buf[1]);
 

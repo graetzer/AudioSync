@@ -25,7 +25,7 @@ bool startsWith(const char *pre, const char *str) {
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
-ssize_t decodeAudiofile(int fd, uint8_t **pcmOut) {
+ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *sampleRate); {
     struct stat statbuf;
     if (fstat(fd, &statbuf) < 0) {
         debugLog("Can not read filesize");
@@ -44,10 +44,6 @@ ssize_t decodeAudiofile(int fd, uint8_t **pcmOut) {
         return -1;
     }
 
-    size_t pcmOutLength = INITIAL_BUFFER;
-    size_t pcmOutMark = 0;
-    *pcmOut = (uint8_t*) malloc(pcmOutLength);
-
     // Find the audio track
     size_t tracks = AMediaExtractor_getTrackCount(extractor);
     for (size_t idx = 0; idx < tracks; idx++) {
@@ -56,75 +52,86 @@ ssize_t decodeAudiofile(int fd, uint8_t **pcmOut) {
         bool sucess = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
         if (startsWith("audio/", mime_type)) {
             // We got a winner
-
             status = AMediaExtractor_selectTrack(extractor, idx);
             assert(status == AMEDIA_OK);
 
+            // Extract relevant data
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, bitRate);
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, sampleRate);
 
-            AMediaCodec *codec = AMediaCodec_createDecoderByType(mime_type);
-            status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
-            assert(status == AMEDIA_OK);
-
-            status = AMediaCodec_start(codec);
-            assert(status == AMEDIA_OK);
-
-            bool hasInput = true, hasOutput = true;
-            // Decoding loop
-            while(hasInput || hasOutput) {
-
-                if (hasInput) {
-                    ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, int64_t timeoutUs);
-                    if (bufIdx >= 0) {
-                        size_t capacity;
-                        uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
-                        ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
-                        int64_t time = AMediaExtractor_getSampleTime(extractor);
-                        if (written < 0) {
-                            debugLog("input EOS");
-                            written = 0;
-                            hasInput = false;
-                        }
-                        uint32_t flags = hasInput ? 0 : AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
-                        status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, flags);
-                        assert(status == AMEDIA_OK);
-                        AMediaExtractor_advance(extractor);// Next sample
-                    }
-                }
-
-                if (hasInput) {
-                    AMediaCodecBufferInfo info;
-                    ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, int64_t timeoutUs);
-                    if (bufIdx >= 0) {
-
-                        if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
-                            debugLog("output EOS");
-                            hasOutput = false;
-                        }
-                        size_t out_size;
-                        uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &out_size);
-
-                        // In case our out buffer is too small, make it bigger
-                        if (out_size > pcmOutLength - pcmOutMark) {
-                            pcmOutLength *= 2;
-                            *pcmOut = (uint8_t*) realloc(*pcmOut, pcmOutLength);
-                        }
-                        memcpy(*pcmOut + pcmOutMark, buffer, out_size);
-                        pcmOutMark += out_size;
-
-                        status = AMediaCodec_releaseOutputBuffer(AMediaCodec*, size_t idx, bool render);
-                        assert(status == AMEDIA_OK);
-                    }
-                }
-            }
-
-            status = AMediaCodec_stop(codec);
-            assert(status == AMEDIA_OK);
-
-            status = AMediaCodec_delete(codec);
-            assert(status == AMEDIA_OK);
-
+            decodeTrack(extractor, format, pcmOut);
+            AMediaFormat_delete(format);
             break;
         }
         AMediaFormat_delete(format);
     }
+}
+
+void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut) {
+    size_t pcmOutLength = INITIAL_BUFFER;
+    size_t pcmOutMark = 0;
+    *pcmOut = (uint8_t*) malloc(pcmOutLength);
+
+
+    AMediaCodec *codec = AMediaCodec_createDecoderByType(mime_type);
+    status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
+    assert(status == AMEDIA_OK);
+
+    status = AMediaCodec_start(codec);
+    assert(status == AMEDIA_OK);
+
+    bool hasInput = true, hasOutput = true;
+    // Decoding loop
+    while(hasInput || hasOutput) {
+
+        if (hasInput) {
+            ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, int64_t timeoutUs);
+            if (bufIdx >= 0) {
+                size_t capacity;
+                uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
+                ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
+                int64_t time = AMediaExtractor_getSampleTime(extractor);
+                if (written < 0) {
+                    debugLog("input EOS");
+                    written = 0;
+                    hasInput = false;
+                }
+                uint32_t flags = hasInput ? 0 : AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
+                status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, flags);
+                assert(status == AMEDIA_OK);
+                AMediaExtractor_advance(extractor);// Next sample
+            }
+        }
+
+        if (hasInput) {
+            AMediaCodecBufferInfo info;
+            ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, int64_t timeoutUs);
+            if (bufIdx >= 0) {
+
+                if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
+                    debugLog("output EOS");
+                    hasOutput = false;
+                }
+                size_t out_size;
+                uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &out_size);
+
+                // In case our out buffer is too small, make it bigger
+                if (out_size > pcmOutLength - pcmOutMark) {
+                    pcmOutLength *= 2;
+                    *pcmOut = (uint8_t*) realloc(*pcmOut, pcmOutLength);
+                }
+                memcpy(*pcmOut + pcmOutMark, buffer, out_size);
+                pcmOutMark += out_size;
+
+                status = AMediaCodec_releaseOutputBuffer(AMediaCodec*, size_t idx, bool render);
+                assert(status == AMEDIA_OK);
+            }
+        }
+    }
+
+    status = AMediaCodec_stop(codec);
+    assert(status == AMEDIA_OK);
+
+    status = AMediaCodec_delete(codec);
+    assert(status == AMEDIA_OK);
 }
