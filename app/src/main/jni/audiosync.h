@@ -13,7 +13,7 @@
 #ifndef _Included_AudioSync_stream
 #define _Included_AudioSync_stream
 
-#include "fifo.h"
+#include <android/audio_utils/fifo.h>
 
 // Opaque pointer
 typedef struct audiosync_context;

@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 #include <pthread.h>
 #include <android/log.h>
 
@@ -81,9 +82,15 @@ int ResolveAddr(char *host, int port, struct sockaddr *ai_addr) {
 
 void audiosync_addClient(audiosync_context *ctx, const char* host) {
     if (ResolveAddr(host, SNTP_PORT, ctx->clientHosts + ctx->numClients) < 0) {
-        debugLog("Could not add client");
+        debugLog("Could not resolve client ip");
+        return;
     }
+    ctx->numClients++;
 }
+
+typedef struct {
+
+} ssad;
 
 void _controlNetworkRoutine(void *ctxPtr) {
     audiosync_context *ctx = (audiosync_context *)ctxPtr;
@@ -93,16 +100,26 @@ void _controlNetworkRoutine(void *ctxPtr) {
         struct sockaddr_in src_addr;
         socklen_t src_addr_len = sizeof(src_addr);
 
-        ssize_t recvlen = recvfrom(ctx->controlFd, buffer, BUFSIZE, 0, (struct sockaddr *)&src_addr, &src_addr_len);
-        if (recvlen == -1) {
-            debugLog("Error while receiving");
-            break;
-        } else if (recvlen < 1) continue;
+        ssize_t recvlen = recvfrom(ctx->controlFd, buffer, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&src_addr, &src_addr_len);
+        if (recvlen > 0) {
+            // TODO figure out the client offsets
+        } else if (recvlen == -1 && ()) {
+           if (errno != EAGAIN && errno != EWOULDBLOCK) {
+               debugLog("Error while receiving");
+               break;
+           }
+        }
 
         pthread_sleep(10);// Sleep 10ms
     }
     return NULL;
 }
+
+typedef struct {
+    uint16_t seqnum;
+    uint32_t timestamp;
+    uint16_t data[1];// Actually variable length
+} __attribute__ ((__packed__)) audiosync_data_package;
 
 // Packet format: [2 bytes, sequence number][]
 
@@ -115,9 +132,10 @@ void _dataNetworkRoutine(void *ctxPtr) {
         socklen_t src_addr_len = sizeof(src_addr);
 
         if (ctx->isMaster) {
+            // TODO figure out the client offsets
 
         } else {
-            ssize_t recvlen = recvfrom(ctx->dataFd, buffer, BUFSIZE, 0, (struct sockaddr *)&src_addr, &src_addr_len);
+            ssize_t recvlen = recvfrom(ctx->dataFd, buffer, BUFSIZE, MSG_DONTWAIT, (struct sockaddr *)&src_addr, &src_addr_len);
             if (recvlen == -1) {
                 debugLog("Error while receiving");
                 break;

@@ -18,10 +18,10 @@
 #include <jni.h>
 #include <pthread.h>
 #include <android/log.h>
+#include <android/audio_utils/fifo.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 
-#include "fifo.h"
 #include "audiosync.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
@@ -60,7 +60,7 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jstring jPath) {
 
-  }
+}
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore

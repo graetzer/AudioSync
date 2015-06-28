@@ -1,5 +1,5 @@
 /*
- * decoder.c: Decode an audio file
+ * decoder.c: Decode an audio file, put the PCM data into a buffer
  *
  * (C) Copyright 2015 Simon Grätzer
  * Email: simon@graetzer.org
@@ -10,12 +10,121 @@
  * of the License.
  */
 
+#include <stdint.h>
+#include <sys/mman.h>
 #include <android/log.h>
-#include <SLES/OpenSLES.h>
-#include <SLES/OpenSLES_Android.h>
+#include <android/media/NdkMediaExtractor.h>
+#include <android/media/NdkMediaCodec.h>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "Decoder", __VA_ARGS__)
+#define INITIAL_BUFFER (256*256)
 
-void* decodeMusicfile(char *filepath) {
+bool startsWith(const char *pre, const char *str) {
+    size_t lenpre = strlen(pre),
+           lenstr = strlen(str);
+    return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
+}
 
+ssize_t decodeAudiofile(int fd, uint8_t **pcmOut) {
+    struct stat statbuf;
+    if (fstat(fd, &statbuf) < 0) {
+        debugLog("Can not read filesize");
+        return -1;
+    }
+    // verify that's it is a file
+    if (!S_ISREG(statbuf.st_mode)) {
+        debugLog("Not an ordinary file");
+        return -1;
+    }
+
+    AMediaExtractor *extractor = AMediaExtractor_new();
+    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, 0, statbuf.st_size);
+    if (status != AMEDIA_OK) {
+        debugLog("Error opening file");
+        return -1;
+    }
+
+    size_t pcmOutLength = INITIAL_BUFFER;
+    size_t pcmOutMark = 0;
+    *pcmOut = (uint8_t*) malloc(pcmOutLength);
+
+    // Find the audio track
+    size_t tracks = AMediaExtractor_getTrackCount(extractor);
+    for (size_t idx = 0; idx < tracks; idx++) {
+        AMediaFormat *format = AMediaExtractor_getTrackFormat(extractor, idx);
+        char *mime_type;
+        bool sucess = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
+        if (startsWith("audio/", mime_type)) {
+            // We got a winner
+
+            status = AMediaExtractor_selectTrack(extractor, idx);
+            assert(status == AMEDIA_OK);
+
+
+            AMediaCodec *codec = AMediaCodec_createDecoderByType(mime_type);
+            status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
+            assert(status == AMEDIA_OK);
+
+            status = AMediaCodec_start(codec);
+            assert(status == AMEDIA_OK);
+
+            bool hasInput = true, hasOutput = true;
+            // Decoding loop
+            while(hasInput || hasOutput) {
+
+                if (hasInput) {
+                    ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, int64_t timeoutUs);
+                    if (bufIdx >= 0) {
+                        size_t capacity;
+                        uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
+                        ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
+                        int64_t time = AMediaExtractor_getSampleTime(extractor);
+                        if (written < 0) {
+                            debugLog("input EOS");
+                            written = 0;
+                            hasInput = false;
+                        }
+                        uint32_t flags = hasInput ? 0 : AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
+                        status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, flags);
+                        assert(status == AMEDIA_OK);
+                        AMediaExtractor_advance(extractor);// Next sample
+                    }
+                }
+
+                if (hasInput) {
+                    AMediaCodecBufferInfo info;
+                    ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, int64_t timeoutUs);
+                    if (bufIdx >= 0) {
+
+                        if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
+                            debugLog("output EOS");
+                            hasOutput = false;
+                        }
+                        size_t out_size;
+                        uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &out_size);
+
+                        // In case our out buffer is too small, make it bigger
+                        if (out_size > pcmOutLength - pcmOutMark) {
+                            pcmOutLength *= 2;
+                            *pcmOut = (uint8_t*) realloc(*pcmOut, pcmOutLength);
+                        }
+                        memcpy(*pcmOut + pcmOutMark, buffer, out_size);
+                        pcmOutMark += out_size;
+
+                        status = AMediaCodec_releaseOutputBuffer(AMediaCodec*, size_t idx, bool render);
+                        assert(status == AMEDIA_OK);
+                    }
+                }
+            }
+
+            status = AMediaCodec_stop(codec);
+            assert(status == AMEDIA_OK);
+
+            status = AMediaCodec_delete(codec);
+            assert(status == AMEDIA_OK);
+
+            break;
+        }
+        AMediaFormat_delete(format);
+    }
 }
