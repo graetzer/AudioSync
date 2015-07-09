@@ -11,10 +11,16 @@
  */
 
 #include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/mman.h>
 #include <android/log.h>
-#include <android/media/NdkMediaExtractor.h>
-#include <android/media/NdkMediaCodec.h>
+#include <media/NdkMediaExtractor.h>
+#include <media/NdkMediaCodec.h>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "Decoder", __VA_ARGS__)
 #define INITIAL_BUFFER (256*256)
@@ -25,7 +31,7 @@ bool startsWith(const char *pre, const char *str) {
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
-ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *sampleRate); {
+ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *sampleRate) {
     struct stat statbuf;
     if (fstat(fd, &statbuf) < 0) {
         debugLog("Can not read filesize");
@@ -46,10 +52,11 @@ ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *s
 
     // Find the audio track
     size_t tracks = AMediaExtractor_getTrackCount(extractor);
-    for (size_t idx = 0; idx < tracks; idx++) {
+    size_t idx = 0;
+    for (; idx < tracks; idx++) {
         AMediaFormat *format = AMediaExtractor_getTrackFormat(extractor, idx);
-        char *mime_type;
-        bool sucess = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
+        const char *mime_type;
+        bool sucess = !!AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
         if (startsWith("audio/", mime_type)) {
             // We got a winner
             status = AMediaExtractor_selectTrack(extractor, idx);
@@ -59,7 +66,7 @@ ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *s
             AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, bitRate);
             AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, sampleRate);
 
-            decodeTrack(extractor, format, pcmOut);
+            decodeTrack(extractor, format, pcmOut, mime_type);
             AMediaFormat_delete(format);
             break;
         }
@@ -67,7 +74,7 @@ ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *s
     }
 }
 
-void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut) {
+void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut, const char* mime_type) {
     size_t pcmOutLength = INITIAL_BUFFER;
     size_t pcmOutMark = 0;
     *pcmOut = (uint8_t*) malloc(pcmOutLength);
