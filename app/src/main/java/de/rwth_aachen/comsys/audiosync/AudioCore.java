@@ -24,7 +24,7 @@ public class AudioCore {
      * @param path Path to a file
      */
     private native void startStreaming(String path);
-    
+
     /**
      * Starts the clients
      * @param serverHost Hostname of the server
@@ -35,12 +35,6 @@ public class AudioCore {
      * Stops the server/client if running
      */
     private native void stopPlayback();
-    
-    /** UNUSED!
-     * Network Service discovery
-     * Adds a new discovered client to the server
-     */
-    public native void addClient(String host);
 
     static {
         System.loadLibrary("AudioCore");
