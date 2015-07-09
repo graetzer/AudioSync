@@ -89,4 +89,3 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startList
 #ifdef __cplusplus
 }
 #endif
-#endif
