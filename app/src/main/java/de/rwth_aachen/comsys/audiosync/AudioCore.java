@@ -18,6 +18,7 @@ public class AudioCore {
     private native void initAudio(int sample_rate, int buf_size);
 
     /**
+     * Starts the server
      * Start sending data to clients, setup sntp server in response
      * mode on the specified port
      * @param path Path to a file
@@ -25,13 +26,13 @@ public class AudioCore {
     private native void startStreaming(String path);
 
     /**
-     * Connect ti a server and listen
-     * @param serverHost
+     * Starts the clients
+     * @param serverHost Hostname of the server
      */
     private native void startListening(String serverHost);
-
+    
     /**
-     * Stop whatever the server or client is doing
+     * Stops the server/client if running
      */
     private native void stopPlayback();
 

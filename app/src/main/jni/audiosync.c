@@ -47,7 +47,7 @@ typedef struct {
     uint16_t samples[];
 } audiosync_context;
 
-int initSockets(audiosync_context *ctx) {
+int initSockets(audiosync_context_t *ctx) {
     if ((ctx->controlFd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         debugLog("cannot create control socket");
         return -1;
@@ -81,7 +81,7 @@ int ResolveAddr(char *host, int port, struct sockaddr *ai_addr) {
 	return 0;
 }
 
-void audiosync_addClient(audiosync_context *ctx, const char* host) {
+void audiosync_addClient(audiosync_context_t *ctx, const char* host) {
     if (ResolveAddr(host, SNTP_PORT, ctx->clientHosts + ctx->numClients) < 0) {
         debugLog("Could not resolve client ip");
         return;
@@ -94,7 +94,7 @@ typedef struct {
 } ssad;
 
 void _controlNetworkRoutine(void *ctxPtr) {
-    audiosync_context *ctx = (audiosync_context *)ctxPtr;
+    audiosync_context *ctx = (audiosync_context_t *)ctxPtr;
 
     uint8_t buffer[BUFSIZE];
     while(ct) {
@@ -119,7 +119,7 @@ void _controlNetworkRoutine(void *ctxPtr) {
 // Packet format: [2 bytes, sequence number][]
 
 void _dataNetworkRoutine(void *ctxPtr) {
-    audiosync_context *ctx = (audiosync_context *)ctxPtr;
+    audiosync_context *ctx = (audiosync_context_t *)ctxPtr;
 
     uint8_t buffer[BUFSIZE];
     while(ct) {
@@ -145,7 +145,7 @@ void _dataNetworkRoutine(void *ctxPtr) {
 }
 
 void _serveNTPRoutine(void *ctxPtr) {
-    audiosync_context *ctx = (audiosync_context *)ctxPtr;
+    audiosync_context *ctx = (audiosync_context_t *)ctxPtr;
     if (msntp_start_server(SNTP_PORT) != 0) return NULL;
 
     printf("Listening for SNTP clients on port %d...", SNTP_PORT);
