@@ -18,7 +18,7 @@
 
 struct audiosync_fifo {
     size_t mBufferSize;
-    size_t *mBufferOffsets// Offset into the buffer for each package
+    size_t *mBufferOffsets;// Offset into the buffer for each package
     audiosync_package *mBuffer; // pointer to buffer of size mFrameCount frames
     volatile int32_t mFront; // frame index of first package slot available to read, or read index
     volatile int32_t mRear;  // frame index of next package slot available to write, or write index
