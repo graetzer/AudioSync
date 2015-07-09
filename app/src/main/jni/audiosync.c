@@ -10,19 +10,22 @@
  * of the License.
  */
 
-#include "stream.h"
-#include "libmsntp/libsmntp.h"
-
+// #include "stream.h"
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <android/log.h>
 
-#include "audiosync_fifo.c"
+#include "libmsntp/libmsntp.h"
+#include "audiosync.h"
+
+
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)
 #define SNTP_PORT 32442
@@ -30,29 +33,12 @@
 #define DATA_PORT 32444
 #define BUFSIZE 4096
 
-typedef struct {
-    struct sockaddr_in* client_addr[128];
-    size_t numClients = 0;
-
-    int controlFd, streamFd;
-    bool isRunning, isMaster;
-    pthread_t controlThread, dataThread, ntpThread;
-    audio_utils_fifo *dataFifo;
-    struct timeval clockOffset;
-
-    // 16 bit per sample. Assume 44,1 kHz
-    // Let's buffer for 3 seconds. Use this like a ringbuffer
-    #define FRAME_BUFFER_SIZE 44100 * 3
-    uint16_t* frameBuffer;
-    uint16_t samples[];
-} audiosync_context;
-
 int initSockets(audiosync_context_t *ctx) {
     if ((ctx->controlFd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         debugLog("cannot create control socket");
         return -1;
     }
-    if (bind(fd, host->ai_addr, host->ai_addrlen) < 0) {
+    if (bind(ctx->controlFd, host->ai_addr, host->ai_addrlen) < 0) {
         debugLog("bind failed");
         return -1;
     }
@@ -60,7 +46,7 @@ int initSockets(audiosync_context_t *ctx) {
         debugLog("cannot create control socket");
         return -1;
     }
-    if (bind(fd, host->ai_addr, host->ai_addrlen) < 0) {
+    if (bind(ctx->dataFd, host->ai_addr, host->ai_addrlen) < 0) {
         debugLog("bind failed");
         return -1;
     }
@@ -174,9 +160,8 @@ void audiosync_startSending(audiosync_context*) {
     pthread_create(&(ctx->ntpThread), NULL, _serveNTPRoutine, ctx);
 }
 
-void audiosync_startReceiving(audiosync_context *ctx, const char* host, audio_utils_fifo *fifo) {
+void audiosync_startReceiving(audiosync_context *ctx, const char* host) {
     ctx->isRunning = true;
-    ctx->dataFifo = fifo;
 
     _setupStreamingThreads(ctx);
 }

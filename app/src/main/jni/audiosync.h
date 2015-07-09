@@ -13,16 +13,29 @@
 #ifndef _Included_AudioSync_stream
 #define _Included_AudioSync_stream
 
-#include "audiosync_fifo.h"
+#include <stdbool.h>
 
 // Opaque pointer
 typedef struct audiosync_context {
+    struct sockaddr_in* client_addr[128];
+    size_t numClients;
+
+    int controlFd, dataFd;
+    bool isRunning, isMaster;
+    pthread_t controlThread, dataThread, ntpThread;
+    struct timeval clockOffset;
+
+    // 16 bit per sample. Assume 44,1 kHz
+    // Let's buffer for 3 seconds. Use this like a ringbuffer
+    #define FRAME_BUFFER_SIZE 44100 * 3
+    uint16_t* frameBuffer;
+    uint16_t samples[];
 } audiosync_context_t;
 
 void audiosync_addClient(audiosync_context_t*, const char* host);
 void audiosync_startSending(audiosync_context_t*, void* todo);
 // TODO interrupted callback
-void audiosync_startReceiving(audiosync_context_t*, const char*, audiosync_fifo *);
+void audiosync_startReceiving(audiosync_context_t*, const char*, void *);
 void audiosync_stop(audiosync_context_t *);
 
 #endif
