@@ -23,9 +23,17 @@ public class AudioCore {
      * @param path Path to a file
      */
     private native void startStreaming(String path);
+
+    /**
+     * Connect ti a server and listen
+     * @param serverHost
+     */
     private native void startListening(String serverHost);
+
+    /**
+     * Stop whatever the server or client is doing
+     */
     private native void stopPlayback();
-    public native void addClient(String host);
 
     static {
         System.loadLibrary("AudioCore");

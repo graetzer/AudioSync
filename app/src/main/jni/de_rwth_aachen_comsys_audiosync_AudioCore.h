@@ -39,13 +39,6 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startList
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback
   (JNIEnv *, jobject);
 
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    addClient
- * Signature: (Ljava/lang/String;II)V
- */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_addClient
-  (JNIEnv *, jobject, jstring, jint, jint);
 
 #ifdef __cplusplus
 }
