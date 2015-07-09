@@ -20,8 +20,8 @@ struct audiosync_fifo {
     size_t mBufferSize;
     size_t *mBufferOffsets// Offset into the buffer for each package
     audiosync_package *mBuffer; // pointer to buffer of size mFrameCount frames
-    volatile int32_t mFront; // frame index of first frame slot available to read, or read index
-    volatile int32_t mRear;  // frame index of next frame slot available to write, or write index
+    volatile int32_t mFront; // frame index of first package slot available to read, or read index
+    volatile int32_t mRear;  // frame index of next package slot available to write, or write index
 };
 
 typedef struct audiosync_fifo audiosync_fifo;
@@ -33,20 +33,41 @@ void audiosync_fifo_init(audiosync_fifo *fifo, size_t bufferSize) {
     fifo->mBuffer = calloc(bufferSize, __MAX_UDP_SIZE__);
 }
 
+void audiosync_fifo_realloc(audiosync_fifo *fifo, size_t bufferSize) {
+    fifo->mBufferSize = bufferSize;
+    fifo->mBufferOffsets = realloc(fifo->mBufferOffsets, bufferSize * sizeof(size_t));
+    fifo->mBuffer = realloc(fifo->mBuffer, bufferSize * __MAX_UDP_SIZE__);
+}
+
 void audiosync_fifo_uninit(audiosync_fifo *fifo, size_t bufferSize) {
     free(fifo->mBuffer);
     free(fifo->mBufferOffsets);
+
+    android_atomic_release_store(audio_utils_fifo_sum(fifo, fifo->mRear, availToWrite),
+                    &fifo->mRear);
 }
 
 ssize_t audiosync_fifo_write(struct audio_utils_fifo *fifo, const audiosync_package *package) {
+    int32_t front = android_atomic_acquire_load(&fifo->mFront);
+    int32_t rear = fifo->mRear;
+    if ((mRear++) % fifo->mBufferSize + 1 == front) return -1;
 
+    size_t length = AUDIOSYNC_PACKAGE_LENGTH(package);
+    memcpy(&)
+
+    android_atomic_release_store((mRear++) % fifo->mBufferSize, &fifo->mRear);
+    return 0;
 }
 
-ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, void *buffer, size_t count) {
+ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, audiosync_package *buffer) {
     int32_t rear = android_atomic_acquire_load(&fifo->mRear);
     int32_t front = fifo->mFront;
-    size_t availToRead = audio_utils_fifo_diff(fifo, rear, front);
-    if (availToRead > count) {
-        availToRead = count;
-    }
+    if (front+1 >= rear) return -1;
+
+    audiosync_package *package = fifo->mBuffer + fifo->mBufferOffsets[front];
+    size_t length = AUDIOSYNC_PACKAGE_LENGTH(package);
+    memcpy(buffer, package, length);
+
+    android_atomic_release_store((mFront++) % fifo->mBufferSize, &fifo->mFront);
+    return length;
 }

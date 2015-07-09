@@ -28,6 +28,7 @@ extern "C" {
      uint16_t pcmDataLength;
      uint8_t pcmData[1];// Actually variable length
  } __attribute__ ((__packed__)) audiosync_package;
+ #define AUDIOSYNC_PACKAGE_LENGTH(pkg)  (sizeof(audiosync_package) + pkg->pcmDataLength - 1)
 
 struct audiosync_fifo;
 typedef struct audiosync_fifo audiosync_fifo;
