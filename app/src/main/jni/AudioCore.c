@@ -23,6 +23,8 @@
 #include <android/asset_manager.h>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
+int global_sample_rate = 0;
+int global_bufsize = 0;
 //#define debugLog(...) printf(__VA_ARGS__)
 
 //#include "audiosync.h"
@@ -65,8 +67,9 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     off_t outStart = 0;
     int fd = AAsset_openFileDescriptor(asset, &outStart, &fileSize);
 
-    uint8_t *pcmOut, uint32_t bitRate, uint32_t sampleRate;
-    ssize_t bufferSize = decodeAudiofile(fd, fileSize, &pcmOut, &bitRate, &sample_rate);
+    uint8_t *pcmOut;
+    uint32_t bitRate, sampleRate;
+    ssize_t bufferSize = decodeAudiofile(fd, fileSize, &pcmOut, &bitRate, &sampleRate);
     if (bufferSize > 0)
         audioplayer_startPlayback(pcmOut, (size_t)bufferSize);
 }

@@ -10,6 +10,8 @@
  * of the License.
  */
 
+#include <stddef.h>
+
  #include "audioplayer.h"
 
 
