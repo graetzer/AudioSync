@@ -43,5 +43,4 @@ typedef struct audiosync_fifo audiosync_fifo;
 void audiosync_fifo_init(audiosync_fifo *fifo, size_t bufferSize);
 void audiosync_fifo_uninit(audiosync_fifo *fifo, size_t bufferSize);
 
-#endif
 #endif  // !AUDIOSYNC_PACKAGE_FIFO_H

@@ -18,7 +18,6 @@
 #include <jni.h>
 #include <pthread.h>
 #include <android/log.h>
-#include <android/audio_utils/fifo.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 
@@ -35,12 +34,14 @@ extern "C" {
 #define MAX_BUFFER_SIZE 4096
 int global_bufsize;
 int global_sample_rate;
-audiosync_contex audiosync;
+audiosync_context_t audiosync;
 
 int current_temp_buffer_ix = 0;
 int16_t temp_buffer[MAX_BUFFER_SIZE * N_BUFFERS];
-uint16_t sample_fifo_buffer;
+uint16_t *sample_fifo_buffer=0;
 struct audio_utils_fifo* sample_fifo;
+static const SLEnvironmentalReverbSettings reverbSettings =
+    SL_I3DL2_ENVIRONMENT_PRESET_STONECORRIDOR;
 
 
 /*
@@ -218,7 +219,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startList
  void startPlayback() {
  // TODO put the init code somewehere ese
     // 2 bytes per sample
-    sample_fifo_buffer = calloc(global_bufsize * sizeof(uint16_t));
+    sample_fifo_buffer = calloc(global_bufsize, sizeof(uint16_t));
     assert(sample_fifo_buffer);
     audio_utils_fifo_init(&sample_fifo, global_bufsize, 2, sample_fifo_buffer);
 

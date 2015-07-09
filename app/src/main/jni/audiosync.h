@@ -16,12 +16,13 @@
 #include "audiosync_fifo.h"
 
 // Opaque pointer
-typedef struct audiosync_context;
+typedef struct audiosync_context {
+} audiosync_context_t;
 
-void audiosync_addClient(audiosync_context*, const char* host);
-void audiosync_startSending(audiosync_context*, void* todo);
+void audiosync_addClient(audiosync_context_t*, const char* host);
+void audiosync_startSending(audiosync_context_t*, void* todo);
 // TODO interrupted callback
-void audiosync_startReceiving(audiosync_context*, const char*, audiosync_fifo *);
-void audiosync_stop(audiosync_context *);
+void audiosync_startReceiving(audiosync_context_t*, const char*, audiosync_fifo *);
+void audiosync_stop(audiosync_context_t *);
 
-##endif
+#endif
