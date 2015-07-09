@@ -16,7 +16,6 @@
 #include <string.h>
 #include <time.h>
 #include <jni.h>
-#include <pthread.h>
 #include <android/log.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>

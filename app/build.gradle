@@ -13,7 +13,7 @@ android {
         ndk {
             moduleName "AudioCore"
             cFlags "-pthread"
-            ldLibs "OpenSLES", "pthread", "log"
+            ldLibs "OpenSLES", "log", "mediandk"
         }
     }
     buildTypes {

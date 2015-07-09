@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <unistd.h>
 #include <time.h>
 #include <stdio.h>
 #include <netdb.h>
@@ -36,13 +37,16 @@ typedef struct {
 
 } ssad;
 
+void audiosync_addClient(audiosync_context_t*ctx, const char* host)
+{
+}
+
 void* _controlNetworkRoutine(void *ctxPtr) {
     audiosync_context_t *ctx = (audiosync_context_t *)ctxPtr;
 
     uint8_t buffer[BUFSIZE];
     while(true) {
-
-        pthread_sleep(10);// Sleep 10ms
+        usleep(10*1000);// Sleep 10ms
     }
 
     return NULL;
@@ -55,7 +59,7 @@ void* _dataNetworkRoutine(void *ctxPtr) {
 
     uint8_t buffer[BUFSIZE];
     while(true) {
-        pthread_sleep(10);// Sleep 10ms
+        usleep(10*1000);// Sleep 10ms
     }
 
     return NULL;

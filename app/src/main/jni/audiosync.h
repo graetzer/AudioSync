@@ -14,6 +14,7 @@
 #define _Included_AudioSync_stream
 
 #include <stdbool.h>
+#include <pthread.h>
 
 // Opaque pointer
 typedef struct audiosync_context {

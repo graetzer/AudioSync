@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <assert.h>
 #include <sys/mman.h>
 #include <android/log.h>
 #include <media/NdkMediaExtractor.h>
