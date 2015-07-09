@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *bitRate, int32_t *sampleRate);
+ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *sampleRate);
 
 #ifdef __cplusplus
 }

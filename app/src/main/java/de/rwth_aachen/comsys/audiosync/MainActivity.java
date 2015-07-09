@@ -7,11 +7,13 @@ import android.view.MenuItem;
 
 
 public class MainActivity extends Activity {
+    private AudioCore mAudioCore;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        mAudioCore = new AudioCore(this);
     }
 
 
@@ -35,5 +37,17 @@ public class MainActivity extends Activity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mAudioCore.startPlaying();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mAudioCore.stopPlayback();
     }
 }

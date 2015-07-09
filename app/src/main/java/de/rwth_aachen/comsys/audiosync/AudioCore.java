@@ -8,12 +8,23 @@ import android.media.AudioManager;
  * Created by simon on 27.06.15.
  */
 public class AudioCore {
+    private AssetManager mAssetManager;
 
-    public void setup(Context ctx) {
+    public AudioCore(Context ctx) {
+        setup(ctx.getApplicationContext());
+    }
+
+    private void setup(Context ctx) {
         AudioManager audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
         String sr = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE);
         String bs = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
         initAudio(Integer.parseInt(sr), Integer.parseInt(bs));
+
+        mAssetManager = ctx.getAssets();
+    }
+
+    public void startPlaying() {
+        startStreaming(mAssetManager, "background.mp3");
     }
 
     private native void initAudio(int sample_rate, int buf_size);
@@ -35,7 +46,7 @@ public class AudioCore {
     /**
      * Stops the server/client if running
      */
-    private native void stopPlayback();
+    public native void stopPlayback();
 
     static {
         System.loadLibrary("AudioCore");

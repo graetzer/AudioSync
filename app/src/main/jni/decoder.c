@@ -69,7 +69,7 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
             }
         }
 
-        if (hasInput) {
+        if (hasOutput) {
             AMediaCodecBufferInfo info;
             ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 1);
             if (bufIdx >= 0) {
@@ -79,7 +79,7 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
                     hasOutput = false;
                 }
                 size_t out_size;
-                uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &out_size);
+                uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, bufIdx, &out_size);
 
                 // In case our out buffer is too small, make it bigger
                 if (out_size > pcmOutLength - pcmOutMark) {
@@ -104,7 +104,7 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
     return pcmOutMark;
 }
 
-ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *bitRate, int32_t *sampleRate) {
+ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *sampleRate) {
 
     AMediaExtractor *extractor = AMediaExtractor_new();
     media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, 0, fileSize);
@@ -119,16 +119,16 @@ ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *bitR
         AMediaFormat *format = AMediaExtractor_getTrackFormat(extractor, idx);
         const char *mime_type;
         bool success = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
-        if (success && startsWith("audio/", mime_type)) {
-            // We got a winner
+        if (success && startsWith("audio/", mime_type)) {// We got a winner
+            debugLog("Selected track %d with mime %s", idx, mime_type);
+
             status = AMediaExtractor_selectTrack(extractor, idx);
-            assert(status == AMEDIA_OK);
+            if(status != AMEDIA_OK) return -1;
 
             // Extract relevant data
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, bitRate);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, sampleRate);
-
             ssize_t pcmOutSize = decodeTrack(extractor, format, pcmOut, mime_type);
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, sampleRate);
+
             AMediaFormat_delete(format);
             return pcmOutSize;
             break;

@@ -15,8 +15,12 @@
 #include <assert.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
-
 #include "audioplayer.h"
+
+
+#include <android/log.h>
+#define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
+
 
 // engine interfaces
  static SLObjectItf engineObject = NULL;
@@ -79,9 +83,9 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      assert(NULL == context);
 
      // Assuming PCM 16
-     int16_t *buf_ptr = temp_buffer + global_bufsize * current_temp_buffer_ix;
-     if (temp_buffer_size < global_bufsize * current_temp_buffer_ix) {
-        SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, global_bufsize * 2);
+     int8_t *buf_ptr = temp_buffer + 2 * global_bufsize * current_temp_buffer_ix;
+     if (buf_ptr + 2 * global_bufsize < temp_buffer + temp_buffer_size) {
+        SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, 2 * global_bufsize);
         assert(SL_RESULT_SUCCESS == result);
         current_temp_buffer_ix++;
      } else {
@@ -166,6 +170,7 @@ void audioplayer_startPlayback(void *buffer, size_t bufferSize) {
     //assert(sample_fifo_buffer);
     //audio_utils_fifo_init(&sample_fifo, global_bufsize, 2, sample_fifo_buffer);
 
+    debugLog("Settings the buffers");
     temp_buffer = buffer;
     temp_buffer_size = bufferSize;
     current_temp_buffer_ix = 0;
@@ -174,14 +179,16 @@ void audioplayer_startPlayback(void *buffer, size_t bufferSize) {
         // set the player's state to playing
         SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
         assert(SL_RESULT_SUCCESS == result);
+        debugLog("Started playback");
     }
  }
 
  void audioplayer_stopPlayback() {
     SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_STOPPED);
     assert(SL_RESULT_SUCCESS == result);
+    debugLog("Stopped playback");
 
-    free(temp_buffer);
+    if (temp_buffer != NULL) free(temp_buffer);
     temp_buffer = NULL;
 
     //audio_utils_fifo_deinit(&sample_fifo);
