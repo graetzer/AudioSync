@@ -17,9 +17,8 @@
 #include <time.h>
 #include <jni.h>
 #include <android/log.h>
-
-
 #include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
 int global_sample_rate = 0;
@@ -66,7 +65,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
 
     uint8_t *pcmOut;
     int32_t bitRate, sampleRate;// Technically we need to supply this to the audioplayer
-    ssize_t bufferSize = decodeAudiofile(fd, fileSize, &pcmOut, &bitRate, &sampleRate);
+    ssize_t bufferSize = decode_audiofile(fd, fileSize, &pcmOut, &bitRate, &sampleRate);
     if (bufferSize > 0)
         audioplayer_startPlayback(pcmOut, (size_t)bufferSize);
 }

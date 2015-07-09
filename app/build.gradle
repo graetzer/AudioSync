@@ -15,7 +15,7 @@ android {
             //  -pedantic  even the android headers show warnings with that
             // -Wall -Wextra -Wshadow
             cFlags "-pthread -std=c99"
-            ldLibs "OpenSLES", "log", "mediandk"
+            ldLibs "android", "OpenSLES", "mediandk", "log"
         }
     }
     buildTypes {

@@ -10,8 +10,11 @@
  * of the License.
  */
 
-#ifndef _Included_AudioSync_stream
-#define _Included_AudioSync_stream
+#ifndef AUDIOSYNC_STREAM
+#define AUDIOSYNC_STREAM
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <stdbool.h>
 #include <pthread.h>
@@ -39,4 +42,7 @@ void audiosync_startSending(audiosync_context_t*, void* todo);
 void audiosync_startReceiving(audiosync_context_t*, const char*, void *);
 void audiosync_stop(audiosync_context_t *);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

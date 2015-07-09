@@ -10,10 +10,15 @@
  * of the License.
  */
 
-#ifndef AUDIOSYNC_DECODE_H
-#define AUDIOSYNC_DECODE_H
-
+#ifndef AUDIOSYNC_DECODER_H
+#define AUDIOSYNC_DECODER_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *bitRate, int32_t *sampleRate);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

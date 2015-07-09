@@ -159,7 +159,7 @@ void audioplayer_init(int sample_rate, size_t buf_size) {
     _createBufferQueueAudioPlayer();
  }
 
-void audioplayer_startPlayback(const void *buffer, const size_t bufferSize) {
+void audioplayer_startPlayback(void *buffer, size_t bufferSize) {
  // TODO put the init code somewhere else
     // 2 bytes per sample
     //sample_fifo_buffer = calloc(global_bufsize, sizeof(uint16_t));
@@ -170,14 +170,19 @@ void audioplayer_startPlayback(const void *buffer, const size_t bufferSize) {
     temp_buffer_size = bufferSize;
     current_temp_buffer_ix = 0;
 
-    // set the player's state to playing
-    SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-    assert(SL_RESULT_SUCCESS == result);
+    if (temp_buffer != NULL && bufferSize > 0) {
+        // set the player's state to playing
+        SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+        assert(SL_RESULT_SUCCESS == result);
+    }
  }
 
  void audioplayer_stopPlayback() {
     SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_STOPPED);
     assert(SL_RESULT_SUCCESS == result);
+
+    free(temp_buffer);
+    temp_buffer = NULL;
 
     //audio_utils_fifo_deinit(&sample_fifo);
     //free(sample_fifo_buffer);
