@@ -16,34 +16,22 @@
 #include <string.h>
 #include <time.h>
 #include <jni.h>
-#include <pthread.h>
 #include <android/log.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 
-//#include "audiosync.h"
-#include "audioplayer.h"
+#include <android/asset_manager.h>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
 //#define debugLog(...) printf(__VA_ARGS__)
 
+//#include "audiosync.h"
+#include "audioplayer.h"
+#include "decoder.c"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define N_BUFFERS 4
-#define MAX_BUFFER_SIZE 4096
-int global_bufsize;
-int global_sample_rate;
-audiosync_context_t audiosync;
-
-int current_temp_buffer_ix = 0;
-int16_t temp_buffer[MAX_BUFFER_SIZE * N_BUFFERS];
-uint16_t *sample_fifo_buffer=0;
-struct audio_utils_fifo* sample_fifo;
-static const SLEnvironmentalReverbSettings reverbSettings =
-    SL_I3DL2_ENVIRONMENT_PRESET_STONECORRIDOR;
-
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -53,6 +41,7 @@ static const SLEnvironmentalReverbSettings reverbSettings =
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint sample_rate, jint buf_size) {
     global_sample_rate = sample_rate;
     global_bufsize = buf_size;
+    audioplayer_init(sample_rate, (size_t)buf_size);
 }
 
 /*
@@ -60,8 +49,26 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
  * Method:    startPlayback
  * Signature: (Ljava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jstring jPath) {
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jobject assetManager, jstring jPath) {
+    AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
+    const char *path = (*env)->GetStringUTFChars(env, jPath, 0);
+    //audiosync_addClient(&audiosync, host);
+    (*env)->ReleaseStringUTFChars(env, jPath, path);
 
+    AAsset* asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
+    if (NULL == asset) {
+        debugLog("_ASSET_NOT_FOUND_");
+        return;
+    }
+
+    off_t fileSize = AAsset_getLength(asset);
+    off_t outStart = 0;
+    int fd = AAsset_openFileDescriptor(asset, &outStart, &fileSize);
+
+    uint8_t *pcmOut, uint32_t bitRate, uint32_t sampleRate;
+    ssize_t bufferSize = decodeAudiofile(fd, fileSize, &pcmOut, &bitRate, &sample_rate);
+    if (bufferSize > 0)
+        audioplayer_startPlayback(pcmOut, (size_t)bufferSize);
 }
 
 /*
@@ -70,7 +77,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
  * Signature: (Ljava/lang/String;)V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback (JNIEnv *env, jobject thiz) {
-
+    audioplayer_stopPlayback();
 }
 
 /*
@@ -79,9 +86,9 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayb
  * Signature: (II)V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startListening(JNIEnv *env, jobject thiz, jstring jHost) {
-    const char *host = (*env)->GetStringUTFChars(env, jHost, 0);
-    audiosync_addClient(&audiosync, host);
-    (*env)->ReleaseStringUTFChars(env, jHost, host);
+    //const char *host = (*env)->GetStringUTFChars(env, jHost, 0);
+    //audiosync_addClient(&audiosync, host);
+    //(*env)->ReleaseStringUTFChars(env, jHost, host);
  }
 
 

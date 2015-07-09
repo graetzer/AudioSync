@@ -10,6 +10,10 @@
  * of the License.
  */
 
+ #include "audioplayer.h"
+
+
+
 // engine interfaces
  static SLObjectItf engineObject = NULL;
  static SLEngineItf engineEngine;
@@ -22,12 +26,28 @@
  static SLObjectItf bqPlayerObject = NULL;
  static SLPlayItf bqPlayerPlay;
  static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
- static SLEffectSendItf bqPlayerEffectSend;
+ //static SLEffectSendItf bqPlayerEffectSend;
  static SLVolumeItf bqPlayerVolume;
 
+ // Parameters for playback
+ static int global_bufsize;
+ static size_t global_sample_rate;
+
+ /*
+
+ #define N_BUFFERS 4
+ #define MAX_BUFFER_SIZE 4096
+  int16_t temp_buffer[MAX_BUFFER_SIZE * N_BUFFERS];
+  uint16_t *sample_fifo_buffer=0;*/
+
+// Current data to play
+ static size_t current_temp_buffer_ix = 0
+ ;
+ static void * temp_buffer;
+ static size_t temp_buffer_size;
 
  // create the engine and output mix objects
- static void audioplayer_createEngine() {
+ static void _createEngine() {
      // create engine
      SLresult result = slCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
      assert(SL_RESULT_SUCCESS == result);
@@ -68,28 +88,30 @@
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      assert(bq == bqPlayerBufferQueue);
      assert(NULL == context);
-     // for streaming playback, replace this test by logic to find and fill the next buffer
-     /*if (--nextCount > 0 && NULL != nextBuffer && 0 != nextSize) {
-         SLresult result;
-         // enqueue another buffer
-         result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, nextBuffer, nextSize);
-         // the most likely other result is SL_RESULT_BUFFER_INSUFFICIENT,
-         // which for this code example would indicate a programming error
-         assert(SL_RESULT_SUCCESS == result);
-     }*/
 
-    int16_t *buf_ptr = temp_buffer + global_bufsize * current_temp_buffer_ix;
+     // Assuming PCM 16
+     int16_t *buf_ptr = temp_buffer + global_bufsize * current_temp_buffer_ix;
+     if (temp_buffer_size < global_bufsize * current_temp_buffer_ix) {
+        SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, global_bufsize);
+        assert(SL_RESULT_SUCCESS == result);
+        current_temp_buffer_ix++;
+     } else {
+        // Technically wrong
+        audioplayer_stopPlayback();
+     }
+
+    /*int16_t *buf_ptr = temp_buffer + global_bufsize * current_temp_buffer_ix;
 
     ssize_t frameCount = audio_utils_fifo_read(sample_fifo, buf_ptr, global_bufsize);
     if (frameCount > 0) {
     SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, frameCount * 2);
         assert(SL_RESULT_SUCCESS == result);
         current_temp_buffer_ix = (current_temp_buffer_ix + 1) % N_BUFFERS;
-    }
+    }*/
  }
 
  // create buffer queue audio player
- static void createBufferQueueAudioPlayer() {
+ static void _createBufferQueueAudioPlayer(int sample_rate) {
      SLresult result;
 
      // configure audio source
@@ -110,12 +132,9 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      SLDataSink audioSnk = {&loc_outmix, NULL};
 
      // create audio player
-     const SLInterfaceID ids[3] = {SL_IID_BUFFERQUEUE, SL_IID_EFFECTSEND,
-             /*SL_IID_MUTESOLO,*/ SL_IID_VOLUME};
-     const SLboolean req[3] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE,
-             /*SL_BOOLEAN_TRUE,*/ SL_BOOLEAN_TRUE};
-     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
-             3, ids, req);
+     const SLInterfaceID ids[2] = {SL_IID_BUFFERQUEUE, /*SL_IID_EFFECTSEND, SL_IID_MUTESOLO,*/ SL_IID_VOLUME};
+     const SLboolean req[2] = {SL_BOOLEAN_TRUE, /*SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE,*/ SL_BOOLEAN_TRUE};
+     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk, 2, ids, req);
      assert(SL_RESULT_SUCCESS == result);
 
      // realize the player
@@ -135,20 +154,27 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      assert(SL_RESULT_SUCCESS == result);
 
      // get the effect send interface
-     result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_EFFECTSEND,
-             &bqPlayerEffectSend);
-     assert(SL_RESULT_SUCCESS == result);
+     //result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_EFFECTSEND,
+     //        &bqPlayerEffectSend);
+     //assert(SL_RESULT_SUCCESS == result);
 
      // get the volume interface
      result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_VOLUME, &bqPlayerVolume);
      assert(SL_RESULT_SUCCESS == result);
  }
 
- void audioplayer_init(void *buffer) {
+ static void _cleanupEngine() {
 
  }
 
- void audioplayer_startPlayback() {
+void audioplayer_init(int sample_rate, size_t buf_size) {
+    global_sample_rate = sample_rate;
+    global_bufsize = buf_size;
+    _createEngine();
+    _createBufferQueueAudioPlayer();
+ }
+
+void audioplayer_startPlayback(const void *buffer, const size_t bufferSize) {
  // TODO put the init code somewhere else
     // 2 bytes per sample
     //sample_fifo_buffer = calloc(global_bufsize, sizeof(uint16_t));
@@ -176,7 +202,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
          bqPlayerObject = NULL;
          bqPlayerPlay = NULL;
          bqPlayerBufferQueue = NULL;
-         bqPlayerEffectSend = NULL;
+         //bqPlayerEffectSend = NULL;
          bqPlayerVolume = NULL;
      }
 

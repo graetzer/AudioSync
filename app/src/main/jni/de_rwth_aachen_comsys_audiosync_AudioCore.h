@@ -21,7 +21,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio
  * Signature: (Ljava/lang/String;)V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startPlayback
-  (JNIEnv *, jobject, jstring);
+  (JNIEnv *, jobject, jobject, jstring);
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore

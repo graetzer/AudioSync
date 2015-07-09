@@ -1,6 +1,7 @@
 package de.rwth_aachen.comsys.audiosync;
 
 import android.content.Context;
+import android.content.res.AssetManager;
 import android.media.AudioManager;
 
 /**
@@ -23,7 +24,7 @@ public class AudioCore {
      * mode on the specified port
      * @param path Path to a file
      */
-    private native void startStreaming(String path);
+    private native void startStreaming(AssetManager assetManager, String path);
 
     /**
      * Starts the clients

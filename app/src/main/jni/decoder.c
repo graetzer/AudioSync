@@ -31,20 +31,10 @@ bool startsWith(const char *pre, const char *str) {
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
-ssize_t decodeAudiofile(int fd, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *sampleRate) {
-    struct stat statbuf;
-    if (fstat(fd, &statbuf) < 0) {
-        debugLog("Can not read filesize");
-        return -1;
-    }
-    // verify that's it is a file
-    if (!S_ISREG(statbuf.st_mode)) {
-        debugLog("Not an ordinary file");
-        return -1;
-    }
+ssize_t decodeAudiofile(int fd, off_t fileSize, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *sampleRate) {
 
     AMediaExtractor *extractor = AMediaExtractor_new();
-    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, 0, statbuf.st_size);
+    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, 0, fileSize);
     if (status != AMEDIA_OK) {
         debugLog("Error opening file");
         return -1;
