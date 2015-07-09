@@ -10,11 +10,13 @@
  * of the License.
  */
 
+#include <stdint.h>
 #include <stddef.h>
+#include <assert.h>
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
 
- #include "audioplayer.h"
-
-
+#include "audioplayer.h"
 
 // engine interfaces
  static SLObjectItf engineObject = NULL;
@@ -22,7 +24,6 @@
 
  // output mix interfaces
  static SLObjectItf outputMixObject = NULL;
- static SLEnvironmentalReverbItf outputMixEnvironmentalReverb = NULL;
 
  // buffer queue player interfaces
  static SLObjectItf bqPlayerObject = NULL;
@@ -43,9 +44,8 @@
   uint16_t *sample_fifo_buffer=0;*/
 
 // Current data to play
- static size_t current_temp_buffer_ix = 0
- ;
- static void * temp_buffer;
+ static size_t current_temp_buffer_ix = 0;// Number of pages
+ static void* temp_buffer;
  static size_t temp_buffer_size;
 
  // create the engine and output mix objects
@@ -63,27 +63,14 @@
      assert(SL_RESULT_SUCCESS == result);
 
      // create output mix, with environmental reverb specified as a non-required interface
-     const SLInterfaceID ids[1] = {SL_IID_ENVIRONMENTALREVERB};
-     const SLboolean req[1] = {SL_BOOLEAN_FALSE};
-     result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 1, ids, req);
+     //const SLInterfaceID ids[1] = {SL_IID_ENVIRONMENTALREVERB};
+     //const SLboolean req[1] = {SL_BOOLEAN_FALSE};
+     result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, NULL, NULL);
      assert(SL_RESULT_SUCCESS == result);
 
      // realize the output mix
      result = (*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE);
      assert(SL_RESULT_SUCCESS == result);
-
-     // get the environmental reverb interface
-     // this could fail if the environmental reverb effect is not available,
-     // either because the feature is not present, excessive CPU load, or
-     // the required MODIFY_AUDIO_SETTINGS permission was not requested and granted
-     result = (*outputMixObject)->GetInterface(outputMixObject, SL_IID_ENVIRONMENTALREVERB,
-             &outputMixEnvironmentalReverb);
-     if (SL_RESULT_SUCCESS == result) {
-         result = (*outputMixEnvironmentalReverb)->SetEnvironmentalReverbProperties(
-                 outputMixEnvironmentalReverb, &reverbSettings);
-         (void)result;
-     }
-     // ignore unsuccessful result codes for environmental reverb, as it is optional for this example
  }
 
  // this callback handler is called every time a buffer finishes playing
@@ -94,7 +81,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      // Assuming PCM 16
      int16_t *buf_ptr = temp_buffer + global_bufsize * current_temp_buffer_ix;
      if (temp_buffer_size < global_bufsize * current_temp_buffer_ix) {
-        SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, global_bufsize);
+        SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, global_bufsize * 2);
         assert(SL_RESULT_SUCCESS == result);
         current_temp_buffer_ix++;
      } else {
@@ -113,7 +100,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
  }
 
  // create buffer queue audio player
- static void _createBufferQueueAudioPlayer(int sample_rate) {
+ static void _createBufferQueueAudioPlayer() {
      SLresult result;
 
      // configure audio source
@@ -152,7 +139,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      assert(SL_RESULT_SUCCESS == result);
 
      // register callback on the buffer queue
-     result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue,_ bqPlayerCallback, NULL);
+     result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, _bqPlayerCallback, NULL);
      assert(SL_RESULT_SUCCESS == result);
 
      // get the effect send interface
@@ -163,10 +150,6 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
      // get the volume interface
      result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_VOLUME, &bqPlayerVolume);
      assert(SL_RESULT_SUCCESS == result);
- }
-
- static void _cleanupEngine() {
-
  }
 
 void audioplayer_init(int sample_rate, size_t buf_size) {
@@ -182,6 +165,10 @@ void audioplayer_startPlayback(const void *buffer, const size_t bufferSize) {
     //sample_fifo_buffer = calloc(global_bufsize, sizeof(uint16_t));
     //assert(sample_fifo_buffer);
     //audio_utils_fifo_init(&sample_fifo, global_bufsize, 2, sample_fifo_buffer);
+
+    temp_buffer = buffer;
+    temp_buffer_size = bufferSize;
+    current_temp_buffer_ix = 0;
 
     // set the player's state to playing
     SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
@@ -212,7 +199,6 @@ void audioplayer_startPlayback(const void *buffer, const size_t bufferSize) {
      if (outputMixObject != NULL) {
          (*outputMixObject)->Destroy(outputMixObject);
          outputMixObject = NULL;
-         outputMixEnvironmentalReverb = NULL;
      }
 
      // destroy engine object, and invalidate all associated interfaces

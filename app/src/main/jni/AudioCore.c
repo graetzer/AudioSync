@@ -17,8 +17,7 @@
 #include <time.h>
 #include <jni.h>
 #include <android/log.h>
-#include <SLES/OpenSLES.h>
-#include <SLES/OpenSLES_Android.h>
+
 
 #include <android/asset_manager.h>
 
@@ -29,7 +28,7 @@ int global_bufsize = 0;
 
 //#include "audiosync.h"
 #include "audioplayer.h"
-#include "decoder.c"
+#include "decoder.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,8 +40,6 @@ extern "C" {
  * Signature: (II)V
  */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint sample_rate, jint buf_size) {
-    global_sample_rate = sample_rate;
-    global_bufsize = buf_size;
     audioplayer_init(sample_rate, (size_t)buf_size);
 }
 
@@ -57,7 +54,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     //audiosync_addClient(&audiosync, host);
     (*env)->ReleaseStringUTFChars(env, jPath, path);
 
-    AAsset* asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
+    AAsset *asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
     if (NULL == asset) {
         debugLog("_ASSET_NOT_FOUND_");
         return;
@@ -68,7 +65,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     int fd = AAsset_openFileDescriptor(asset, &outStart, &fileSize);
 
     uint8_t *pcmOut;
-    uint32_t bitRate, sampleRate;
+    int32_t bitRate, sampleRate;// Technically we need to supply this to the audioplayer
     ssize_t bufferSize = decodeAudiofile(fd, fileSize, &pcmOut, &bitRate, &sampleRate);
     if (bufferSize > 0)
         audioplayer_startPlayback(pcmOut, (size_t)bufferSize);

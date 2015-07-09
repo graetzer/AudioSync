@@ -23,6 +23,7 @@
 #include <media/NdkMediaExtractor.h>
 #include <media/NdkMediaCodec.h>
 
+#define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore-Decoder", __VA_ARGS__)
 #define INITIAL_BUFFER (256*256)
 
 bool startsWith(const char *pre, const char *str) {
@@ -31,7 +32,7 @@ bool startsWith(const char *pre, const char *str) {
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
-void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut, const char* mime_type) {
+ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut, const char* mime_type) {
     size_t pcmOutLength = INITIAL_BUFFER;
     size_t pcmOutMark = 0;
     *pcmOut = (uint8_t*) malloc(pcmOutLength);
@@ -39,10 +40,10 @@ void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcm
 
     AMediaCodec *codec = AMediaCodec_createDecoderByType(mime_type);
     int status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
-    assert(status == AMEDIA_OK);
+    if(status != AMEDIA_OK) return -1;
 
     status = AMediaCodec_start(codec);
-    assert(status == AMEDIA_OK);
+    if(status != AMEDIA_OK) return -1;
 
     bool hasInput = true, hasOutput = true;
     // Decoding loop
@@ -55,14 +56,15 @@ void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcm
                 uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
                 ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
                 int64_t time = AMediaExtractor_getSampleTime(extractor);
+                uint32_t flags = 0;
                 if (written < 0) {
                     debugLog("input EOS");
                     written = 0;
                     hasInput = false;
+                    flags = AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
                 }
-                uint32_t flags = hasInput ? 0 : AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
                 status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, flags);
-                assert(status == AMEDIA_OK);
+                if(status != AMEDIA_OK) return -1;
                 AMediaExtractor_advance(extractor);// Next sample
             }
         }
@@ -88,19 +90,21 @@ void decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcm
                 pcmOutMark += out_size;
 
                 status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, true);
-                assert(status == AMEDIA_OK);
+                if(status != AMEDIA_OK) return -1;
             }
         }
     }
 
+    // Not sure if it is necessary to check the status here
     status = AMediaCodec_stop(codec);
-    assert(status == AMEDIA_OK);
-
+    if(status != AMEDIA_OK) return -1;
     status = AMediaCodec_delete(codec);
-    assert(status == AMEDIA_OK);
+    if(status != AMEDIA_OK) return -1;
+
+    return pcmOutMark;
 }
 
-ssize_t decodeAudiofile(int fd, off_t fileSize, uint8_t **pcmOut, uint32_t *bitRate, uint32_t *sampleRate) {
+ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *bitRate, int32_t *sampleRate) {
 
     AMediaExtractor *extractor = AMediaExtractor_new();
     media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, 0, fileSize);
@@ -111,12 +115,11 @@ ssize_t decodeAudiofile(int fd, off_t fileSize, uint8_t **pcmOut, uint32_t *bitR
 
     // Find the audio track
     size_t tracks = AMediaExtractor_getTrackCount(extractor);
-    size_t idx = 0;
-    for (; idx < tracks; idx++) {
+    for (size_t idx = 0; idx < tracks; idx++) {
         AMediaFormat *format = AMediaExtractor_getTrackFormat(extractor, idx);
         const char *mime_type;
-        bool sucess = !!AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
-        if (startsWith("audio/", mime_type)) {
+        bool success = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
+        if (success && startsWith("audio/", mime_type)) {
             // We got a winner
             status = AMediaExtractor_selectTrack(extractor, idx);
             assert(status == AMEDIA_OK);
@@ -125,8 +128,9 @@ ssize_t decodeAudiofile(int fd, off_t fileSize, uint8_t **pcmOut, uint32_t *bitR
             AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, bitRate);
             AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, sampleRate);
 
-            decodeTrack(extractor, format, pcmOut, mime_type);
+            ssize_t pcmOutSize = decodeTrack(extractor, format, pcmOut, mime_type);
             AMediaFormat_delete(format);
+            return pcmOutSize;
             break;
         }
         AMediaFormat_delete(format);

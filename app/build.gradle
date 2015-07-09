@@ -12,7 +12,9 @@ android {
         versionName "1.0"
         ndk {
             moduleName "AudioCore"
-            cFlags "-pthread"
+            //  -pedantic  even the android headers show warnings with that
+            // -Wall -Wextra -Wshadow
+            cFlags "-pthread -std=c99"
             ldLibs "OpenSLES", "log", "mediandk"
         }
     }
