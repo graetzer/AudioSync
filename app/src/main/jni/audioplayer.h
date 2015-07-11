@@ -17,7 +17,7 @@ extern "C" {
 #endif
 
 // Initialize the OpenSL audio interface
-void audioplayer_init(int sample_rate, size_t buf_size);
+void audioplayer_init(int samplesPerSec, int framesPerBuffer);
 void audioplayer_startPlayback(void *buffer, size_t bufferSize);
 void audioplayer_stopPlayback();
 void audioplayer_cleanup();

@@ -3,6 +3,7 @@ package de.rwth_aachen.comsys.audiosync;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.media.AudioManager;
+import android.util.Log;
 
 /**
  * Created by simon on 27.06.15.
@@ -24,10 +25,18 @@ public class AudioCore {
     }
 
     public void startPlaying() {
-        startStreaming(mAssetManager, "background.mp3");
+
+        Thread t = new Thread() {
+            @Override
+            public void run() {
+                Log.d("AudioCore", "Started AudioCore thread");
+                startStreaming(mAssetManager, "background.mp3");
+            }
+        };
+        t.start();
     }
 
-    private native void initAudio(int sample_rate, int buf_size);
+    private native void initAudio(int samplesPerSec, int framesPerBuffer);
 
     /**
      * Starts the server

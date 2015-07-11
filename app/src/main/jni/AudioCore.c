@@ -35,10 +35,13 @@ int global_bufsize = 0;
  * Method:    initAudio
  * Signature: (II)V
  */
-void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint sample_rate, jint buf_size) {
-    audioplayer_init(sample_rate, (size_t)buf_size);
-    debugLog("Device Buffer Size: %d ;  Sample Rate: %d", buf_size, sample_rate);
+void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint samplesPerSec, jint framesPerBuffer) {
+    audioplayer_init(samplesPerSec, framesPerBuffer);
 }
+
+static const char hello[] =
+#include "hello_clip.h"
+;
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -46,7 +49,11 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
  * Signature: (Ljava/lang/String;)V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jobject assetManager, jstring jPath) {
-    AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
+
+
+    audioplayer_startPlayback(hello, sizeof(hello));
+    // Get the asset manager
+    /*AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
     // Open the asset from the assets/ folder
     const char *path = (*env)->GetStringUTFChars(env, jPath, 0);
     AAsset *asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
@@ -66,11 +73,11 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     ssize_t pcmSize = decode_audiofile(fd, fileSize, &pcmOut, &sample_rate);
     if (pcmSize > 0) {
         debugLog("Audio file Sample Rate: %d", sample_rate);
-        debugLog("Decoded file size %d", pcmSize);
+        debugLog("Decoded file size %ld", (long)pcmSize);
 
         audioplayer_startPlayback(pcmOut, (size_t)pcmSize);
     } else
-        debugLog("Decoding seems to have failed");
+        debugLog("Decoding seems to have failed");*/
 }
 
 /*

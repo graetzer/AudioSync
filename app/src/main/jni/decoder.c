@@ -23,7 +23,7 @@
 #include <media/NdkMediaExtractor.h>
 #include <media/NdkMediaCodec.h>
 
-#define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore-Decoder", __VA_ARGS__)
+#define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "Decoder", __VA_ARGS__)
 #define INITIAL_BUFFER (256*256)
 
 bool startsWith(const char *pre, const char *str) {
