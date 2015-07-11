@@ -35,8 +35,7 @@ bool startsWith(const char *pre, const char *str) {
 ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut, const char* mime_type) {
     size_t pcmOutLength = INITIAL_BUFFER;
     size_t pcmOutMark = 0;
-    *pcmOut = (uint8_t*) malloc(pcmOutLength);
-
+    uint8_t* pcmBuffer = (uint8_t*) malloc(pcmOutLength);
 
     AMediaCodec *codec = AMediaCodec_createDecoderByType(mime_type);
     int status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
@@ -55,15 +54,14 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
                 size_t capacity;
                 uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
                 ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
-                int64_t time = AMediaExtractor_getSampleTime(extractor);
-                uint32_t flags = 0;
                 if (written < 0) {
                     debugLog("input EOS");
-                    written = 0;
                     hasInput = false;
-                    flags = AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
+                    status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, 0, 0, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+                } else {
+                    int64_t time = AMediaExtractor_getSampleTime(extractor);
+                    status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, 0);
                 }
-                status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, flags);
                 if(status != AMEDIA_OK) return -1;
                 AMediaExtractor_advance(extractor);// Next sample
             }
@@ -82,14 +80,14 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
                 uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, bufIdx, &out_size);
 
                 // In case our out buffer is too small, make it bigger
-                if (out_size > pcmOutLength - pcmOutMark) {
+                if (pcmOutLength - pcmOutMark < out_size) {
                     pcmOutLength *= 2;
-                    *pcmOut = (uint8_t*) realloc(*pcmOut, pcmOutLength);
+                    pcmBuffer = (uint8_t*) realloc(pcmBuffer, pcmOutLength);
                 }
-                memcpy(*pcmOut + pcmOutMark, buffer, out_size);
+                memcpy(pcmBuffer + pcmOutMark, buffer, out_size);
                 pcmOutMark += out_size;
 
-                status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, true);
+                status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, false);
                 if(status != AMEDIA_OK) return -1;
             }
         }
@@ -101,6 +99,7 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
     status = AMediaCodec_delete(codec);
     if(status != AMEDIA_OK) return -1;
 
+    *pcmOut = pcmBuffer;
     return pcmOutMark;
 }
 

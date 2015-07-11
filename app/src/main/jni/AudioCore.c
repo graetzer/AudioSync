@@ -39,8 +39,8 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
     audioplayer_init(samplesPerSec, framesPerBuffer);
 }
 
-static const char hello[] =
-#include "hello_clip.h"
+static const char android[] =
+#include "android_clip.h"
 ;
 
 /*
@@ -50,10 +50,10 @@ static const char hello[] =
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jobject assetManager, jstring jPath) {
 
+    audioplayer_startPlayback(android, sizeof(android), 8000);/*
 
-    audioplayer_startPlayback(hello, sizeof(hello));
     // Get the asset manager
-    /*AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
+    AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
     // Open the asset from the assets/ folder
     const char *path = (*env)->GetStringUTFChars(env, jPath, 0);
     AAsset *asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
@@ -72,12 +72,11 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     int32_t sample_rate = 0;// Technically we need to supply this to the audioplayer
     ssize_t pcmSize = decode_audiofile(fd, fileSize, &pcmOut, &sample_rate);
     if (pcmSize > 0) {
-        debugLog("Audio file Sample Rate: %d", sample_rate);
-        debugLog("Decoded file size %ld", (long)pcmSize);
-
-        audioplayer_startPlayback(pcmOut, (size_t)pcmSize);
+        debugLog("Audio file Sample Rate: %d ; Decoded file size %ld", sample_rate, (long)pcmSize);
+        audioplayer_startPlayback(pcmOut, (size_t)pcmSize, (int)sample_rate);
     } else
-        debugLog("Decoding seems to have failed");*/
+        debugLog("Decoding seems to have failed");
+    //*/
 }
 
 /*
