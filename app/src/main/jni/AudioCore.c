@@ -12,9 +12,9 @@
 
 #include "de_rwth_aachen_comsys_audiosync_AudioCore.h"
 
+#include <stdlib.h>
 #include <assert.h>
 #include <string.h>
-#include <time.h>
 #include <jni.h>
 #include <android/log.h>
 #include <android/asset_manager.h>
@@ -49,33 +49,31 @@ static const char android[] =
  * Signature: (Ljava/lang/String;)V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jobject assetManager, jstring jPath) {
-
-    audioplayer_startPlayback(android, sizeof(android), 8000);/*
+    //void *buffer = memcpy(malloc(sizeof(android)), android, sizeof(android));
+    //audioplayer_startPlayback(buffer, sizeof(android), 8000, 1);/*
 
     // Get the asset manager
     AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
     // Open the asset from the assets/ folder
     const char *path = (*env)->GetStringUTFChars(env, jPath, 0);
     AAsset *asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
-    (*env)->ReleaseStringUTFChars(env, jPath, path);
     if (NULL == asset) {
         debugLog("_ASSET_NOT_FOUND_");
         return;
     }
 
-    off_t fileSize = AAsset_getLength(asset);
-    off_t outStart = 0;
+    off_t outStart, fileSize;
     int fd = AAsset_openFileDescriptor(asset, &outStart, &fileSize);
-    debugLog("Audio file size: %ld", (long)fileSize);
+    assert(0 <= fd);
+    AAsset_close(asset);
 
-    uint8_t *pcmOut;
-    int32_t sample_rate = 0;// Technically we need to supply this to the audioplayer
-    ssize_t pcmSize = decode_audiofile(fd, fileSize, &pcmOut, &sample_rate);
-    if (pcmSize > 0) {
-        debugLog("Audio file Sample Rate: %d ; Decoded file size %ld", sample_rate, (long)pcmSize);
-        audioplayer_startPlayback(pcmOut, (size_t)pcmSize, (int)sample_rate);
-    } else
+    debugLog("%s size: %ld %ld", path, (long)fileSize, (long)outStart);
+    struct decoder_audio audio = decoder_decode(fd, outStart, fileSize);
+    if (audio.pcmLength > 0)
+        audioplayer_startPlayback(audio.pcm, (size_t)audio.pcmLength, audio.sampleRate, audio.numChannels);
+    else
         debugLog("Decoding seems to have failed");
+    (*env)->ReleaseStringUTFChars(env, jPath, path);
     //*/
 }
 

@@ -16,7 +16,16 @@
 extern "C" {
 #endif
 
-ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *sampleRate);
+struct decoder_audio {
+    int32_t sampleRate, numChannels;
+    ssize_t pcmLength;
+    uint8_t *pcm;
+};
+
+/*
+
+*/
+struct decoder_audio decoder_decode(int fd, off64_t offset, off64_t length);
 
 #ifdef __cplusplus
 }

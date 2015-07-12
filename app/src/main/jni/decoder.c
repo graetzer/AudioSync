@@ -22,9 +22,10 @@
 #include <android/log.h>
 #include <media/NdkMediaExtractor.h>
 #include <media/NdkMediaCodec.h>
+#include "decoder.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "Decoder", __VA_ARGS__)
-#define INITIAL_BUFFER (256*256)
+#define INITIAL_BUFFER (1024*1024 * 4) // 4MB
 
 bool startsWith(const char *pre, const char *str) {
     size_t lenpre = strlen(pre),
@@ -32,18 +33,21 @@ bool startsWith(const char *pre, const char *str) {
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
 
-ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut, const char* mime_type) {
+ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut, int32_t *sampleRate, int32_t *numChannels) {
     size_t pcmOutLength = INITIAL_BUFFER;
     size_t pcmOutMark = 0;
     uint8_t* pcmBuffer = (uint8_t*) malloc(pcmOutLength);
 
+    const char *mime_type;
+    AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
     AMediaCodec *codec = AMediaCodec_createDecoderByType(mime_type);
+
     int status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
     if(status != AMEDIA_OK) return -1;
-
     status = AMediaCodec_start(codec);
     if(status != AMEDIA_OK) return -1;
 
+    format = AMediaCodec_getOutputFormat(codec);
     bool hasInput = true, hasOutput = true;
     // Decoding loop
     while(hasInput || hasOutput) {
@@ -54,12 +58,12 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
                 size_t capacity;
                 uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
                 ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
+                int64_t time = AMediaExtractor_getSampleTime(extractor);
                 if (written < 0) {
                     debugLog("input EOS");
                     hasInput = false;
-                    status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, 0, 0, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+                    status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, 0, time, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
                 } else {
-                    int64_t time = AMediaExtractor_getSampleTime(extractor);
                     status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, written, time, 0);
                 }
                 if(status != AMEDIA_OK) return -1;
@@ -69,29 +73,38 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
 
         if (hasOutput) {
             AMediaCodecBufferInfo info;
-            ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 1);
+            ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);
             if (bufIdx >= 0) {
 
                 if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
                     debugLog("output EOS");
                     hasOutput = false;
                 }
-                size_t out_size;
-                uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, bufIdx, &out_size);
 
+                uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, bufIdx, NULL);
+                //debugLog("BufferInfo offset: %d; size: %d; outsize: %lu", info.offset, info.size, (unsigned long)out_size);
                 // In case our out buffer is too small, make it bigger
-                if (pcmOutLength - pcmOutMark < out_size) {
-                    pcmOutLength *= 2;
+                if (pcmOutLength - pcmOutMark < info.size) {
+                    pcmOutLength += INITIAL_BUFFER*2;
                     pcmBuffer = (uint8_t*) realloc(pcmBuffer, pcmOutLength);
                 }
-                memcpy(pcmBuffer + pcmOutMark, buffer, out_size);
-                pcmOutMark += out_size;
+                memcpy(pcmBuffer + pcmOutMark, buffer + info.offset, info.size);
+                pcmOutMark += info.size;
 
                 status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, false);
                 if(status != AMEDIA_OK) return -1;
+            } else if (bufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+                AMediaFormat_delete(format);
+                format = AMediaCodec_getOutputFormat(codec);
+                debugLog("Output format changed to: %s", AMediaFormat_toString(format));
             }
         }
     }
+
+    // Extract the final parameters
+    AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, sampleRate);
+    AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, numChannels);
+    AMediaFormat_delete(format);
 
     // Not sure if it is necessary to check the status here
     status = AMediaCodec_stop(codec);
@@ -103,13 +116,14 @@ ssize_t decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **
     return pcmOutMark;
 }
 
-ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *sampleRate) {
+struct decoder_audio decoder_decode(int fd, off64_t offset, off64_t fileSize) {
+    struct decoder_audio result = {0, 0, -1, 0};
 
     AMediaExtractor *extractor = AMediaExtractor_new();
-    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, 0, fileSize);
+    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, offset, fileSize);
     if (status != AMEDIA_OK) {
         debugLog("Error opening file");
-        return -1;
+        return result;
     }
 
     // Find the audio track
@@ -119,19 +133,19 @@ ssize_t decode_audiofile(int fd, off_t fileSize, uint8_t **pcmOut, int32_t *samp
         const char *mime_type;
         bool success = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
         if (success && startsWith("audio/", mime_type)) {// We got a winner
-            debugLog("Selected track %d with mime %s", idx, mime_type);
+            debugLog("Input format %s", AMediaFormat_toString(format));
 
             status = AMediaExtractor_selectTrack(extractor, idx);
-            if(status != AMEDIA_OK) return -1;
+            if(status != AMEDIA_OK) break;
 
             // Extract relevant data
-            ssize_t pcmOutSize = decodeTrack(extractor, format, pcmOut, mime_type);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, sampleRate);
-
+            result.pcmLength = decodeTrack(extractor, format, &(result.pcm),
+                                                                &(result.sampleRate),
+                                                                &(result.numChannels));
             AMediaFormat_delete(format);
-            return pcmOutSize;
             break;
         }
         AMediaFormat_delete(format);
     }
+    return result;
 }

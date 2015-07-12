@@ -31,6 +31,7 @@ public class AudioCore {
             public void run() {
                 Log.d("AudioCore", "Started AudioCore thread");
                 startStreaming(mAssetManager, "background.mp3");
+                //startStreaming(mAssetManager, "mandelsson.mp3");
             }
         };
         t.start();
@@ -42,16 +43,18 @@ public class AudioCore {
      * Starts the server
      * Start sending data to clients, setup sntp server in response
      * mode on the specified port
+     *
      * @param path Path to a file
      */
     private native void startStreaming(AssetManager assetManager, String path);
 
     /**
      * Starts the clients
+     *
      * @param serverHost Hostname of the server
      */
     private native void startListening(String serverHost);
-    
+
     /**
      * Stops the server/client if running
      */
