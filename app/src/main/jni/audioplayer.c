@@ -50,7 +50,7 @@
 
 // Current data to play
  static size_t temp_buffer_ix = 0;// Number of pages
- static int8_t* temp_buffer;
+ static uint8_t* temp_buffer;
  static size_t temp_buffer_size;
  static size_t temp_buffer_numChannels = 1;
 
@@ -208,7 +208,7 @@ void audioplayer_init(int32_t samplesPerSec, int32_t framesPerBuffer) {
     debugLog("Initialized AudioPlayer");
  }
 
-void audioplayer_startPlayback(int8_t *buffer, size_t bufferSize, int32_t samplesPerSec, int32_t numChannels) {
+void audioplayer_startPlayback(uint8_t *buffer, size_t bufferSize, int32_t samplesPerSec, int32_t numChannels) {
     debugLog("%s(0x..., %ld, %d, %d)", __FUNCTION__, (long)bufferSize, samplesPerSec, numChannels);
  // TODO put the init code somewhere else
     // 2 bytes per sample
