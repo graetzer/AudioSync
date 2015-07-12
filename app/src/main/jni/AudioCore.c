@@ -39,6 +39,10 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
     audioplayer_init(samplesPerSec, framesPerBuffer);
 }
 
+void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio (JNIEnv *env, jobject thiz) {
+    audioplayer_cleanup();
+}
+
 static const char android[] =
 #include "android_clip.h"
 ;

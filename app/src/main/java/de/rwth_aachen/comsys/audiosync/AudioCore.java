@@ -15,6 +15,12 @@ public class AudioCore {
         setup(ctx.getApplicationContext());
     }
 
+    @Override
+    protected void finalize() throws Throwable {
+        super.finalize();
+        deinitAudio();
+    }
+
     private void setup(Context ctx) {
         AudioManager audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
         String sr = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE);
@@ -25,8 +31,8 @@ public class AudioCore {
     }
 
     public void startPlaying() {
-        startStreaming(mAssetManager, "background.mp3");
-        //startStreaming(mAssetManager, "mandelsson.mp3");
+        //startStreaming(mAssetManager, "background.mp3");
+        startStreaming(mAssetManager, "mandelsson.mp3");
         /*Thread t = new Thread() {
             @Override
             public void run() {
@@ -38,6 +44,7 @@ public class AudioCore {
     }
 
     private native void initAudio(int samplesPerSec, int framesPerBuffer);
+    private native void deinitAudio();
 
     /**
      * Starts the server

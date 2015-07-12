@@ -81,13 +81,10 @@
  // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     if (temp_buffer == NULL) return;
-    //(*bq)->Enqueue(bqPlayerBufferQueue, temp_buffer, temp_buffer_size);
-    //(*bq)->Enqueue(bqPlayerBufferQueue, sawtoothBuffer, SAWTOOTH_FRAMES);
-
 
     // Assuming PCM 16
-    // Let's try to fill in the ideal amount of frames
-    size_t size = global_framesPerBuffers * temp_buffer_numChannels;//* sizeof(int16_t)
+    // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
+    size_t size = global_framesPerBuffers * temp_buffer_numChannels;
     size_t offset = size * temp_buffer_ix;
 
     if (offset < temp_buffer_size) {
@@ -134,7 +131,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
          	.formatType = SL_DATAFORMAT_PCM,
          	.numChannels = numChannels,
          	.samplesPerSec = samplesPerSec * 1000,// Milli Hz
-         	.bitsPerSample = SL_PCMSAMPLEFORMAT_FIXED_8,
+         	.bitsPerSample = SL_PCMSAMPLEFORMAT_FIXED_16,
          	.containerSize = SL_PCMSAMPLEFORMAT_FIXED_16,
          	.channelMask = channelMask,
          	.endianness = SL_BYTEORDER_LITTLEENDIAN// TODO: compute real endianness

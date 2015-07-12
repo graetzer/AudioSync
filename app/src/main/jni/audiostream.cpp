@@ -24,7 +24,7 @@
 #include <pthread.h>
 #include <android/log.h>
 
-#include "libmsntp/libmsntp.h"
+#include "external/libmsntp/libmsntp.h"
 #include "audiostream.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)

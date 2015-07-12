@@ -23,8 +23,8 @@ model {
         //  -pedantic  even the android headers show warnings with that
         // -Wshadow
         CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra"]
-        //cppFlags += ["-std=c++11", "-Wall", "-Wextra"]
-        //stl = "stlport_static"
+        cppFlags += ["-std=c++11", "-Wall", "-Wextra"]
+        stl = "stlport_static"
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }
     /*android.productFlavors {
