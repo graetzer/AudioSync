@@ -25,16 +25,16 @@ public class AudioCore {
     }
 
     public void startPlaying() {
-
-        Thread t = new Thread() {
+        startStreaming(mAssetManager, "background.mp3");
+        //startStreaming(mAssetManager, "mandelsson.mp3");
+        /*Thread t = new Thread() {
             @Override
             public void run() {
                 Log.d("AudioCore", "Started AudioCore thread");
-                startStreaming(mAssetManager, "background.mp3");
-                //startStreaming(mAssetManager, "mandelsson.mp3");
+
             }
         };
-        t.start();
+        t.start();*/
     }
 
     private native void initAudio(int samplesPerSec, int framesPerBuffer);

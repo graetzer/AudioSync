@@ -1,31 +1,49 @@
-apply plugin: 'com.android.application'
+apply plugin: 'com.android.model.application'
+model {
+    android {
+        compileSdkVersion = 22
+        buildToolsVersion = "22.0.1"
 
-android {
-    compileSdkVersion 22
-    buildToolsVersion "22.0.1"
-
-    defaultConfig {
-        applicationId "de.rwth_aachen.comsys.audiosync"
-        minSdkVersion 21
-        targetSdkVersion 22
-        versionCode 1
-        versionName "1.0"
-        ndk {
-            moduleName "AudioCore"
-            //  -pedantic  even the android headers show warnings with that
-            // -Wall -Wextra -Wshadow
-            cFlags "-pthread -std=c99"
-            ldLibs "android", "OpenSLES", "mediandk", "log"
+        defaultConfig.with {
+            applicationId = "de.rwth_aachen.comsys.audiosync"
+            minSdkVersion.apiLevel = 21
+            targetSdkVersion.apiLevel = 22
+            versionCode = 1
+            versionName = "1.0"
         }
     }
-    buildTypes {
+    android.buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            isMinifyEnabled = false
+            proguardFiles += file('proguard-rules.pro')
         }
     }
+    android.ndk {
+        moduleName = "AudioCore"
+        //  -pedantic  even the android headers show warnings with that
+        // -Wshadow
+        CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra"]
+        //cppFlags += ["-std=c++11", "-Wall", "-Wextra"]
+        //stl = "stlport_static"
+        ldLibs += ["android", "OpenSLES", "mediandk", "log"]
+    }
+    /*android.productFlavors {
+        create ("arm7") {
+            ndk.abiFilters += "armeabi-v7a"
+        }
+        create ("arm8") {
+            ndk.abiFilters += "arm64-v8a"
+        }
+        create ("x86-32") {
+            ndk.abiFilters += "x86"
+        }
+        // for detailed abiFilter descriptions, refer to "Supported ABIs" @
+        // https://developer.android.com/ndk/guides/abis.html#sa
+        // build one including all productFlavors
+        // build one including all productFlavors
+        create("fat")
+    }*/
 }
-
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
     //compile 'com.android.support:appcompat-v7:22.2.0'

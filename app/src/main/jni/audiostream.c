@@ -25,7 +25,7 @@
 #include <android/log.h>
 
 #include "libmsntp/libmsntp.h"
-#include "audiosync.h"
+#include "audiostream.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)
 #define SNTP_PORT 32442

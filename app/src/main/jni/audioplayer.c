@@ -11,8 +11,6 @@
  */
 
 #include <stdlib.h>
-#include <stdint.h>
-#include <stddef.h>
 #include <assert.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
@@ -52,7 +50,7 @@
  static size_t temp_buffer_ix = 0;// Number of pages
  static uint8_t* temp_buffer;
  static size_t temp_buffer_size;
- static size_t temp_buffer_numChannels = 1;
+ static int32_t temp_buffer_numChannels = 1;
 
  // create the engine and output mix objects
  static void _createEngine() {
@@ -80,18 +78,6 @@
      assert(SL_RESULT_SUCCESS == result);
  }
 
-
- #define SAWTOOTH_FRAMES 8000
- static short sawtoothBuffer[SAWTOOTH_FRAMES];
- // synthesize a mono sawtooth wave and place it into a buffer (called automatically on load)
- __attribute__((constructor)) static void onDlOpen(void)
- {
-     unsigned i;
-     for (i = 0; i < SAWTOOTH_FRAMES; ++i) {
-         sawtoothBuffer[i] = 16384 - ((i % 100) * 160);
-     }
- }
-
  // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     if (temp_buffer == NULL) return;
@@ -101,7 +87,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
 
     // Assuming PCM 16
     // Let's try to fill in the ideal amount of frames
-    size_t size = global_framesPerBuffers;// * sizeof(int16_t) * temp_buffer_numChannels;
+    size_t size = global_framesPerBuffers * temp_buffer_numChannels;//* sizeof(int16_t)
     size_t offset = size * temp_buffer_ix;
 
     if (offset < temp_buffer_size) {
