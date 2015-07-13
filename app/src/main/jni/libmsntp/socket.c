@@ -267,7 +267,7 @@ skipped. */
 
 
 
-extern int close_socket (int which) {
+extern int msntp_close_socket (int which) {
 
 /* There is little point in shielding this with a timeout, because any hangs
 are unlikely to be interruptible.  It can get called when the sockets haven't

@@ -12,10 +12,10 @@
 
 #include "de_rwth_aachen_comsys_audiosync_AudioCore.h"
 
-#include <stdlib.h>
-#include <assert.h>
-#include <string.h>
 #include <jni.h>
+#include <signal.h>
+#include <pthread.h>
+#include <assert.h>
 #include <android/log.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
@@ -29,6 +29,10 @@ int global_bufsize = 0;
 #include "audioplayer.h"
 #include "decoder.h"
 
+void thread_exit_handler(int sig) {
+    debugLog("this signal is %d \n", sig);
+    pthread_exit(0);
+}
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -37,6 +41,14 @@ int global_bufsize = 0;
  */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint samplesPerSec, jint framesPerBuffer) {
     audioplayer_init(samplesPerSec, framesPerBuffer);
+
+    // Workaround to kill threads since pthread_cancel is not supported
+    struct sigaction actions;
+    memset(&actions, 0, sizeof(actions));
+    sigemptyset(&actions.sa_mask);
+    actions.sa_flags = 0;
+    actions.sa_handler = thread_exit_handler;
+    sigaction(SIGUSR1, &actions, NULL);
 }
 
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio (JNIEnv *env, jobject thiz) {

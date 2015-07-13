@@ -15,7 +15,9 @@ No changes should be needed for any system that is even remotely like Unix. */
 #include <string.h>
 #include <time.h>
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define VERSION         "1.6a"         /* Just the version string */
 #define MAX_SOCKETS        10          /* Maximum number of addresses */
@@ -76,7 +78,7 @@ extern int read_socket (int which, void *packet, int length, int waiting,
 
 extern int flush_socket (int which, int *count);
 
-extern int close_socket (int which);
+extern int msntp_close_socket (int which);
 
 
 
@@ -87,3 +89,7 @@ extern double current_time (double offset);
 extern time_t convert_time (double value, int *millisecs);
 
 extern int adjust_time (double difference, int immediate, double ignore);
+
+#ifdef __cplusplus
+}
+#endif

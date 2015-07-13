@@ -123,7 +123,7 @@ int msntp_serve() {
 }
 
 int msntp_stop_server (void) {
-    return close_socket(0);
+    return msntp_close_socket(0);
 }
     
 const char *msntp_strerror() {

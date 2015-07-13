@@ -18,7 +18,9 @@ damn-fool reason. */
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* It is most unclear whether these should be here or in kludges.h, as they are
 kludges to keep 32-bit address dependencies out of the main body of internet.c,
@@ -35,5 +37,9 @@ to see whether the universal availability of 64-bit integers arrives first. */
 
 /* Defined in internet.c */
 
-extern int find_address (struct in_addr *address, struct in_addr *anywhere,
+int find_address (struct in_addr *address, struct in_addr *anywhere,
     struct in_addr *everwhere, int *port, char *hostname, int timespan);
+
+#ifdef __cplusplus
+}
+#endif

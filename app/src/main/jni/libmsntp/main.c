@@ -1571,7 +1571,7 @@ the results warrant. */
 
 /* Tidy up the socket, issues diagnostics and perform the action. */
 
-    for (k = 0; k < nhosts; ++k) close_socket(k);
+    for (k = 0; k < nhosts; ++k) msntp_close_socket(k);
     if (accepts == 0) {
         fatal(EMSNTP_NO_GOOD_RESPONSE,"no acceptable packets received",NULL);
         return EMSNTP_NO_GOOD_RESPONSE;

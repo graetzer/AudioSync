@@ -22,27 +22,14 @@ model {
         moduleName = "AudioCore"
         //  -pedantic  even the android headers show warnings with that
         // -Wshadow
-        CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra"]
-        cppFlags += ["-std=c++11", "-Wall", "-Wextra"]
+        CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-Iortp/include/"]
+        cppFlags += ["-std=c++11", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-Iortp/include/"]
         stl = "stlport_static"
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }
-    /*android.productFlavors {
-        create ("arm7") {
-            ndk.abiFilters += "armeabi-v7a"
-        }
-        create ("arm8") {
-            ndk.abiFilters += "arm64-v8a"
-        }
-        create ("x86-32") {
-            ndk.abiFilters += "x86"
-        }
-        // for detailed abiFilter descriptions, refer to "Supported ABIs" @
-        // https://developer.android.com/ndk/guides/abis.html#sa
-        // build one including all productFlavors
-        // build one including all productFlavors
-        create("fat")
-    }*/
+    android.productFlavors {
+        create("all")
+    }
 }
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
