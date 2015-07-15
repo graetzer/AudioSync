@@ -21,18 +21,20 @@
 #include <android/asset_manager_jni.h>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
-int global_sample_rate = 0;
-int global_bufsize = 0;
 //#define debugLog(...) printf(__VA_ARGS__)
 
-//#include "audiosync.h"
 #include "audioplayer.h"
+#include "audiostream.h"
 #include "decoder.h"
 
+#ifdef RTP_SUPPORT_THREAD
 void thread_exit_handler(int sig) {
     debugLog("this signal is %d \n", sig);
     pthread_exit(0);
 }
+#endif
+
+audiosync_context audioCtx;
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -42,22 +44,27 @@ void thread_exit_handler(int sig) {
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint samplesPerSec, jint framesPerBuffer) {
     audioplayer_init(samplesPerSec, framesPerBuffer);
 
+#ifdef RTP_SUPPORT_THREAD
     // Workaround to kill threads since pthread_cancel is not supported
+    // See jthread.cpp
     struct sigaction actions;
     memset(&actions, 0, sizeof(actions));
     sigemptyset(&actions.sa_mask);
     actions.sa_flags = 0;
     actions.sa_handler = thread_exit_handler;
     sigaction(SIGUSR1, &actions, NULL);
+#endif
 }
 
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio (JNIEnv *env, jobject thiz) {
     audioplayer_cleanup();
 }
 
-static const char android[] =
-#include "android_clip.h"
-;
+//static const char android[] =
+//#include "android_clip.h"
+//;
+
+
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -83,8 +90,11 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     assert(0 <= fd);
     AAsset_close(asset);
 
-    debugLog("%s size: %ld %ld", path, (long)fileSize, (long)outStart);
-    struct decoder_audio audio = decoder_decode(fd, outStart, fileSize);
+    AMediaExtractor *extr = decoder_createExtractor(fd, outStart, fileSize);
+    audiosync_startSending(&audioCtx, extr);
+
+    /*debugLog("%s size: %ld %ld", path, (long)fileSize, (long)outStart);
+    struct decoder_audio audio = decoder_decodeFile(fd, outStart, fileSize);
     if (audio.pcmLength > 0)
         audioplayer_startPlayback(audio.pcm, (size_t)audio.pcmLength, audio.sampleRate, audio.numChannels);
     else
@@ -100,6 +110,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback (JNIEnv *env, jobject thiz) {
     audioplayer_stopPlayback();
+    audiosync_stop(&audioCtx);
 }
 
 /*

@@ -17,14 +17,18 @@
 #include <string>
 #include <pthread.h>
 #include <android/log.h>
-#include "audiostream.h"
 
 #include "libmsntp/libmsntp.h"
 #include "jrtplib/rtpsession.h"
+#include "jrtplib/rtppacket.h"
 #include "jrtplib/rtpudpv4transmitter.h"
 #include "jrtplib/rtpipv4address.h"
 #include "jrtplib/rtpsessionparams.h"
-#include "jrtplib/rtperrors.h"
+
+#include "audiostream.h"
+#include "decoder.h"
+#include "audioplayer.h"
+
 
 using namespace jrtplib;
 
@@ -33,25 +37,6 @@ using namespace jrtplib;
 #define RTP_PORT 32443
 #define RTCP_PORT 32444
 
-struct audiosync_context {
-    /*struct sockaddr_in* client_addr[128];
-    long timeDiff[128];
-    size_t numClients = 0;*/
-
-    bool isRunning;
-    pthread_t networkThread, ntpThread;
-
-    struct timeval clockOffset;
-
-    uint8_t *buffer;
-    size_t bufferLength;
-    /*
-    // 16 bit per sample. Assume 44,1 kHz
-    // Let's buffer for 3 seconds. Use this like a ringbuffer
-#define FRAME_BUFFER_SIZE 44100 * 3
-    uint16_t* frameBuffer;
-    uint16_t samples[];*/
-};
 
 
 void audiostream_init() {
@@ -65,12 +50,8 @@ void audiostream_deinit() {
     //ortp_exit();
 };
 
-void audiostream_addClient(audiosync_context_t*ctx, const char* host) {
-
-}
-
 void* _serveNTPServer(void *ctxPtr) {
-    audiosync_context_t *ctx = (audiosync_context_t *)ctxPtr;
+    audiosync_context *ctx = (audiosync_context *)ctxPtr;
 
     if (msntp_start_server(SNTP_PORT) != 0)
         return NULL;
@@ -85,7 +66,7 @@ void* _serveNTPServer(void *ctxPtr) {
     return NULL;
 }
 
-void checkerror(int rtperr) {
+static void _checkerror(int rtperr) {
     if (rtperr < 0) {
         debugLog("RTP Error %s", RTPGetErrorString(rtperr).c_str());
         exit(-1);
@@ -93,65 +74,70 @@ void checkerror(int rtperr) {
 }
 
 void* _sendStream(void *ctxPtr) {
-    audiosync_context_t *ctx = (audiosync_context_t *)ctxPtr;
+    audiosync_context *ctx = (audiosync_context *)ctxPtr;
 
-    RTPSession sess;
-    RTPUDPv4TransmissionParams transparams;
     RTPSessionParams sessparams;
-
     // IMPORTANT: The local timestamp unit MUST be set, otherwise
     //            RTCP Sender Report info will be calculated wrong
     // In this case, we'll be sending 10 samples each second, so we'll
     // put the timestamp unit to (1.0/10.0)
-    sessparams.SetOwnTimestampUnit(1.0/10.0);
+    sessparams.SetOwnTimestampUnit(1.0/1000.0);// Simon: AMediaExtractor uses microseconds
 
-    sessparams.SetAcceptOwnPackets(true);
+    //sessparams.SetAcceptOwnPackets(true);
     uint16_t portbase = RTP_PORT;
+    RTPUDPv4TransmissionParams transparams;
     transparams.SetPortbase(portbase);
+    RTPSession sess;
     int status = sess.Create(sessparams,&transparams);
-    checkerror(status);
+    _checkerror(status);
+    sess.SetDefaultMark(false);
 
     in_addr_t destip = inet_addr("1.2.3.4");
     uint16_t destport = RTP_PORT;
     RTPIPv4Address addr(destip, destport);
-
     status = sess.AddDestination(addr);
-    checkerror(status);
+    _checkerror(status);
 
-    size_t size = 160, offset = 0;
-    while(offset+size < ctx->bufferLength && ctx->isRunning) {
-        status = sess.SendPacket(ctx->buffer + offset, size, 0, false, size);
-        offset += size;
-
-        checkerror(status);
+    ssize_t written = 0;
+    int64_t lastTime = 0;
+    while(written > 0 && ctx->isRunning) {
+        bool mark = false;
+        int64_t time = 0;
+        uint8_t buffer[1024];
+        written = decoder_extractData(ctx->extractor, buffer, sizeof(buffer), &time);
+        uint32_t timestampinc = (uint32_t) time - lastTime;// Assuming it will fit
+        lastTime = time;
+        if (written < 0) {
+            debugLog("Sender: End of stream");
+            buffer[0] = '\0';
+            status = sess.SendPacket(buffer, 1, 0, true, timestampinc);
+        } else {
+            status = sess.SendPacket(buffer, written, 0, false, timestampinc);
+        }
+        _checkerror(status);
+        // Not really necessary
         sess.BeginDataAccess();
-        // check incoming packets
+        // check incoming packets TODO use example4.cpp to add destinations
         if (sess.GotoFirstSourceWithData()) {
             do {
                 RTPPacket *pack;
                 while ((pack = sess.GetNextPacket()) != NULL) {
-                    // You can examine the data here
-                    printf("Got packet !\n");
-
-                    // we don't longer need the packet, so
-                    // we'll delete it
+                    printf("The sender should not get packets !\n");
                     sess.DeletePacket(pack);
                 }
             } while (sess.GotoNextSourceWithData());
         }
-
         sess.EndDataAccess();
-
+// Without threads we have to do that for ourselves
 #ifndef RTP_SUPPORT_THREAD
         status = sess.Poll();
         checkerror(status);
 #endif // RTP_SUPPORT_THREAD
 
-        RTPTime::Wait(RTPTime(1,0));
+        RTPTime::Wait(RTPTime(0,100));
     }
 
-
-    sess.BYEDestroy(RTPTime(10,0),0,0);
+    sess.BYEDestroy(RTPTime(2,0),0,0);
 
     /*RtpSession *session=rtp_session_new(RTP_SESSION_SENDONLY);
     rtp_session_set_scheduling_mode(session, true);
@@ -188,8 +174,93 @@ void* _sendStream(void *ctxPtr) {
 
 
 void* _receiveStream(void *ctxPtr) {
-    audiosync_context_t *ctx = (audiosync_context_t *)ctxPtr;
+    audiosync_context *ctx = (audiosync_context *)ctxPtr;
 
+    RTPSession sess;
+    RTPUDPv4TransmissionParams transparams;
+    RTPSessionParams sessparams;
+
+    // IMPORTANT: The local timestamp unit MUST be set, otherwise
+    //            RTCP Sender Report info will be calculated wrong
+    // In this case, we'll be sending 10 samples each second, so we'll
+    // put the timestamp unit to (1.0/10.0)
+    sessparams.SetOwnTimestampUnit(1.0/10.0);
+
+    sessparams.SetAcceptOwnPackets(true);
+    uint16_t portbase = RTP_PORT;
+    transparams.SetPortbase(portbase);
+    int status = sess.Create(sessparams,&transparams);
+    _checkerror(status);
+
+    in_addr_t destip = inet_addr("1.2.3.4");
+    uint16_t destport = RTP_PORT;
+    RTPIPv4Address addr(destip, destport);
+
+    status = sess.AddDestination(addr);
+    _checkerror(status);
+
+    // TODO figure out how to check for connections
+
+    size_t bufferLength = 1024*1024, bufferOffset = 0;
+    uint8_t *pcmBuffer = (uint8_t *) malloc(bufferLength);
+
+    AMediaFormat *format = AMediaFormat_new();
+    // TODO figure this out
+    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "audio/mpeg");
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, 44100);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, 2);
+
+    AMediaCodec *codec = AMediaCodec_createDecoderByType("audio/mpeg");
+    status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
+    if(status != AMEDIA_OK) return NULL;
+
+    size_t offset = 0;
+    bool hasInput = true;
+    bool hasOutput = true;
+    while(hasInput && ctx->isRunning) {
+
+        sess.BeginDataAccess();
+        // check incoming packets
+        if (sess.GotoFirstSourceWithData()) {
+            do {
+                RTPPacket *pack;
+                while ((pack = sess.GetNextPacket()) != NULL) {
+                    uint8_t * payload = pack->GetPayloadData();
+                    size_t length = pack->GetPayloadLength();
+                    uint32_t timestamp = pack->GetTimestamp();// TODO figure out if this starts at 0
+                    // probably not, so record first timestamp and use differences
+
+                    hasInput = !pack->HasMarker();// We repurposed this as end of stream
+
+                    if (hasInput) {
+                        decoder_enqueueBuffer(codec, payload, length, (int64_t)timestamp);
+                    } else {
+                        debugLog("Receiver: End of stream");
+                        // Tell the codec we are done
+                        decoder_enqueueBuffer(codec, NULL, -1, (int64_t)timestamp);
+                    }
+                    hasOutput = decoder_dequeueBuffer(codec, &format, &pcmBuffer, &bufferLength, &bufferOffset);
+
+                    sess.DeletePacket(pack);
+                }
+            } while (sess.GotoNextSourceWithData());
+        }
+
+        sess.EndDataAccess();
+
+#ifndef RTP_SUPPORT_THREAD
+        status = sess.Poll();
+        checkerror(status);
+#endif // RTP_SUPPORT_THREAD
+    }
+
+    sess.BYEDestroy(RTPTime(1,0),0,0);
+
+    while(hasOutput) {
+        hasOutput = decoder_dequeueBuffer(codec, &format, &pcmBuffer, &bufferLength, &bufferOffset);
+    }
+    // TODO don't use constants
+    audioplayer_startPlayback(pcmBuffer, bufferOffset, 44100, 2);
 
     /*RtpSession *session=rtp_session_new(RTP_SESSION_RECVONLY);
     rtp_session_set_scheduling_mode(session,1);
@@ -228,13 +299,14 @@ void* _receiveStream(void *ctxPtr) {
     return NULL;
 }
 
-void audiosync_startSending(audiosync_context_t* ctx, void* todo) {
+void audiosync_startSending(audiosync_context* ctx, AMediaExtractor *extractor) {
     ctx->isRunning = true;
-    pthread_create(&(ctx->ntpThread), NULL, _serveNTPServer, ctx);
+    ctx->extractor = extractor;
+    //pthread_create(&(ctx->ntpThread), NULL, _serveNTPServer, ctx);
     pthread_create(&(ctx->networkThread), NULL, _sendStream, ctx);
 }
 
-void audiosync_startReceiving(audiosync_context_t *ctx, const char* host, void* todo) {
+void audiosync_startReceiving(audiosync_context *ctx) {
     ctx->isRunning = true;
 
     // TODO try to set priorities on threads
@@ -243,7 +315,7 @@ void audiosync_startReceiving(audiosync_context_t *ctx, const char* host, void* 
     pthread_create(&(ctx->networkThread), &attr, _receiveStream, ctx);
 }
 
-void audiosync_stop(audiosync_context_t *ctx) {
+void audiosync_stop(audiosync_context *ctx) {
     if (ctx->isRunning) {
         ctx->isRunning = false;
 

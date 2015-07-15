@@ -44,7 +44,7 @@ public class AudioCore {
     }
 
     private native void initAudio(int samplesPerSec, int framesPerBuffer);
-    private native void deinitAudio();
+    public native void deinitAudio();
 
     /**
      * Starts the server
@@ -60,7 +60,7 @@ public class AudioCore {
      *
      * @param serverHost Hostname of the server
      */
-    private native void startListening(String serverHost);
+    public native void startListening(String serverHost);
 
     /**
      * Stops the server/client if running

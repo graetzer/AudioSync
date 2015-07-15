@@ -6,7 +6,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements MainActivityFragment.ICallbacks {
     private AudioCore mAudioCore;
 
     @Override
@@ -16,6 +16,11 @@ public class MainActivity extends Activity {
         mAudioCore = new AudioCore(this);
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mAudioCore.deinitAudio();
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -49,5 +54,16 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         mAudioCore.stopPlayback();
+    }
+
+    @Override
+    public void startSending() {
+        mAudioCore.startPlaying();
+    }
+
+    @Override
+    public void startListening() {
+        // TODO put the NSD host info in here
+        mAudioCore.startListening("");
     }
 }
