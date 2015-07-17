@@ -21,32 +21,31 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio
-        (JNIEnv *, jobject);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    startPlayback
- * Signature: (Ljava/lang/String;)V
- */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startPlayback
-  (JNIEnv *, jobject, jobject, jstring);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    startListening
- * Signature: (Ljava/lang/String;)V
- */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startListening
-  (JNIEnv *, jobject, jstring);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    stopPlayback
- * Signature: ()V
- */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback
   (JNIEnv *, jobject);
 
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    startStreaming
+ * Signature: (ILandroid/content/res/AssetManager;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming
+  (JNIEnv *, jobject, jint, jobject, jstring);
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    startReceiving
+ * Signature: (Ljava/lang/String;I)V
+ */
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startReceiving
+  (JNIEnv *, jobject, jstring, jint);
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    stop
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServices
+  (JNIEnv *, jobject);
 
 #ifdef __cplusplus
 }

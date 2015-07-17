@@ -34,7 +34,8 @@ void thread_exit_handler(int sig) {
 }
 #endif
 
-audiosync_context audioCtx;
+// Global audiostream manager
+static audiostream_context *audioCtx;
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -43,6 +44,7 @@ audiosync_context audioCtx;
  */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint samplesPerSec, jint framesPerBuffer) {
     audioplayer_init(samplesPerSec, framesPerBuffer);
+    audioCtx = audiostream_new();
 
 #ifdef RTP_SUPPORT_THREAD
     // Workaround to kill threads since pthread_cancel is not supported
@@ -57,29 +59,29 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
 }
 
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio (JNIEnv *env, jobject thiz) {
-    audioplayer_cleanup();
+    audiostream_stop(audioCtx);
+    audioplayer_cleanup();// Player stops automatically
+    audiostream_free(audioCtx);
 }
 
 //static const char android[] =
 //#include "android_clip.h"
 //;
 
-
-
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
  * Method:    startPlayback
  * Signature: (Ljava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jobject assetManager, jstring jPath) {
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz, jint portbase, jobject assetManager, jstring jPath) {
     //void *buffer = memcpy(malloc(sizeof(android)), android, sizeof(android));
     //audioplayer_startPlayback(buffer, sizeof(android), 8000, 1);/*
 
-    // Get the asset manager
     AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
-    // Open the asset from the assets/ folder
     const char *path = (*env)->GetStringUTFChars(env, jPath, 0);
+    // Open the asset from the assets/ folder
     AAsset *asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
+    (*env)->ReleaseStringUTFChars(env, jPath, path);
     if (NULL == asset) {
         debugLog("_ASSET_NOT_FOUND_");
         return;
@@ -91,7 +93,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     AAsset_close(asset);
 
     AMediaExtractor *extr = decoder_createExtractor(fd, outStart, fileSize);
-    audiosync_startSending(&audioCtx, extr);
+    audiostream_startStreaming(audioCtx, portbase, extr);//*/
 
     /*debugLog("%s size: %ld %ld", path, (long)fileSize, (long)outStart);
     struct decoder_audio audio = decoder_decodeFile(fd, outStart, fileSize);
@@ -99,27 +101,27 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
         audioplayer_startPlayback(audio.pcm, (size_t)audio.pcmLength, audio.sampleRate, audio.numChannels);
     else
         debugLog("Decoding seems to have failed");
-    (*env)->ReleaseStringUTFChars(env, jPath, path);
+
     //*/
 }
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    stopPlayback
- * Signature: (Ljava/lang/String;)V
+ * Method:    startReceiving
+ * Signature: (Ljava/lang/String;I)V
  */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopPlayback (JNIEnv *env, jobject thiz) {
-    audioplayer_stopPlayback();
-    audiosync_stop(&audioCtx);
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startReceiving (JNIEnv *env, jobject thiz, jstring jHost, jint portbase) {
+    const char *host = (*env)->GetStringUTFChars(env, jHost, 0);
+    audiostream_startReceiving(audioCtx, host, portbase);
+    (*env)->ReleaseStringUTFChars(env, jHost, host);
 }
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    startListening
- * Signature: (II)V
+ * Method:    stop
+ * Signature: ()V
  */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startListening(JNIEnv *env, jobject thiz, jstring jHost) {
-    //const char *host = (*env)->GetStringUTFChars(env, jHost, 0);
-    //audiosync_addClient(&audiosync, host);
-    //(*env)->ReleaseStringUTFChars(env, jHost, host);
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServices(JNIEnv *env, jobject thiz) {
+    audioplayer_stopPlayback();
+    audiostream_stop(audioCtx);
 }

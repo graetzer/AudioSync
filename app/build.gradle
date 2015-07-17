@@ -24,12 +24,13 @@ model {
         // -Wshadow
         CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-Iortp/include/"]
         cppFlags += ["-std=c++11", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-Iortp/include/"]
-        stl = "stlport_static"
+        stl = "gnustl_static" // supports atomics
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }
-    android.productFlavors {
+    /*android.productFlavors {
         create("all")
-    }
+
+    }*/
 }
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])

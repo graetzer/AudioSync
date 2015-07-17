@@ -183,7 +183,7 @@ ssize_t decoder_extractData(AMediaExtractor* extractor, uint8_t *buffer, size_t 
     return written;
 }
 
-int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *buffer, size_t size, int64_t time) {
+int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *buffer, ssize_t size, int64_t time) {
     ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, 5000);
     if (bufIdx >= 0) {
         size_t capacity;
@@ -195,13 +195,13 @@ int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *buffer, size_t size, int6
         } else {
             if (capacity < size) {
                 status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, capacity, time, 0);
-                if(status != AMEDIA_OK) return -1;
+                if(status != AMEDIA_OK) return status;
                 status = decoder_enqueueBuffer(codec, buffer + capacity, size - capacity, time);
             } else {
                 status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, size, time, 0);
             }
         }
-        if(status != AMEDIA_OK) return -1;
+        if(status != AMEDIA_OK) return status;
     }
     return AMEDIA_OK;
 }
@@ -222,7 +222,7 @@ bool decoder_dequeueBuffer(AMediaCodec *codec, AMediaFormat **format, uint8_t **
         *bufferOffset += info.size;
 
         int status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, false);
-        if(status != AMEDIA_OK) return -1;
+        if(status != AMEDIA_OK) return false;
     } else if (bufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
         if (*format != NULL) AMediaFormat_delete(*format);
         *format = AMediaCodec_getOutputFormat(codec);

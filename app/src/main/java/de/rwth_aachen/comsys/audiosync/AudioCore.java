@@ -30,9 +30,9 @@ public class AudioCore {
         mAssetManager = ctx.getAssets();
     }
 
-    public void startPlaying() {
+    public void startPlaying(int portbase) {
         //startStreaming(mAssetManager, "background.mp3");
-        startStreaming(mAssetManager, "mandelsson.mp3");
+        startStreaming(portbase, mAssetManager, "mandelsson.mp3");
         /*Thread t = new Thread() {
             @Override
             public void run() {
@@ -43,8 +43,28 @@ public class AudioCore {
         t.start();*/
     }
 
+    public void cleanup() {
+        Thread t = new Thread() {
+            @Override
+            public void run() {
+                deinitAudio();
+            }
+        };
+        t.start();
+    }
+
+    public void stopPlaying() {
+        Thread t = new Thread() {
+            @Override
+            public void run() {
+                stopServices();// TODO figure out a better name
+            }
+        };
+        t.start();
+    }
+
     private native void initAudio(int samplesPerSec, int framesPerBuffer);
-    public native void deinitAudio();
+    private native void deinitAudio();
 
     /**
      * Starts the server
@@ -53,19 +73,19 @@ public class AudioCore {
      *
      * @param path Path to a file
      */
-    private native void startStreaming(AssetManager assetManager, String path);
+    private native void startStreaming(int portbase, AssetManager assetManager, String path);
 
     /**
      * Starts the clients
      *
      * @param serverHost Hostname of the server
      */
-    public native void startListening(String serverHost);
+    public native void startReceiving(String serverHost, int portbase);
 
     /**
-     * Stops the server/client if running
+     * Stops the server/client if running. (Basically stop playing music)
      */
-    public native void stopPlayback();
+    private native void stopServices();
 
     static {
         System.loadLibrary("AudioCore");

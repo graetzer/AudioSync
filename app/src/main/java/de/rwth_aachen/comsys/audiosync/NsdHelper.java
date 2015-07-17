@@ -29,11 +29,13 @@ public class NsdHelper {
     NsdManager.ResolveListener mResolveListener;
     NsdManager.DiscoveryListener mDiscoveryListener;
     NsdManager.RegistrationListener mRegistrationListener;
+    ServiceResolvedCallback mServiceResolvedCallback = null;
+    boolean mDidSendBroadcast = false;
 
-    public static final String SERVICE_TYPE = "_http._tcp.";
+    public static final String SERVICE_TYPE = "_rtp._udp.";
 
     public static final String TAG = "NsdHelper";
-    public String mServiceName = "AudioSyncNSD";
+    public String mServiceName = "de.rwth_aachen.comsys.AudioSync";
 
     NsdServiceInfo mService;
 
@@ -48,7 +50,6 @@ public class NsdHelper {
         initializeRegistrationListener();
 
         //mNsdManager.init(mContext.getMainLooper(), this);
-
     }
 
     public void initializeDiscoveryListener() {
@@ -61,12 +62,14 @@ public class NsdHelper {
 
             @Override
             public void onServiceFound(NsdServiceInfo service) {
-                Log.d(TAG, "Service discovery success" + service);
+                Log.d(TAG, "Service discovery success " + service);
                 if (!service.getServiceType().equals(SERVICE_TYPE)) {
                     Log.d(TAG, "Unknown Service Type: " + service.getServiceType());
-                } else if (service.getServiceName().equals(mServiceName)) {
+                } else if (service.getServiceName().equals(mServiceName) && mDidSendBroadcast) {
+                    // This is only the same machine if we did send out a broadcast too
                     Log.d(TAG, "Same machine: " + mServiceName);
-                } else if (service.getServiceName().contains(mServiceName)){
+                }
+                else if (service.getServiceName().contains(mServiceName)){
                     mNsdManager.resolveService(service, mResolveListener);
                 }
             }
@@ -110,11 +113,15 @@ public class NsdHelper {
             public void onServiceResolved(NsdServiceInfo serviceInfo) {
                 Log.e(TAG, "Resolve Succeeded. " + serviceInfo);
 
-                if (serviceInfo.getServiceName().equals(mServiceName)) {
+                if (mDidSendBroadcast && serviceInfo.getServiceName().equals(mServiceName)) {
                     Log.d(TAG, "Same IP.");
                     return;
                 }
                 mService = serviceInfo;
+                if (mServiceResolvedCallback != null) {
+                    mServiceResolvedCallback.onServiceResolved(mService);
+                    stopDiscovery();
+                }
             }
         };
     }
@@ -147,13 +154,19 @@ public class NsdHelper {
         serviceInfo.setPort(port);
         serviceInfo.setServiceName(mServiceName);
         serviceInfo.setServiceType(SERVICE_TYPE);
-        
+        //serviceInfo.setAttribute();
+
+        mDidSendBroadcast = true;
         mNsdManager.registerService(
                 serviceInfo, NsdManager.PROTOCOL_DNS_SD, mRegistrationListener);
-        
     }
 
-    public void discoverServices() {
+    public void unregisterService() {
+        mNsdManager.unregisterService(mRegistrationListener);
+    }
+
+    public void discoverServices(ServiceResolvedCallback callback) {
+        mServiceResolvedCallback = callback;
         mNsdManager.discoverServices(
                 SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, mDiscoveryListener);
     }
@@ -165,8 +178,8 @@ public class NsdHelper {
     public NsdServiceInfo getChosenServiceInfo() {
         return mService;
     }
-    
-    public void tearDown() {
-        mNsdManager.unregisterService(mRegistrationListener);
+
+    public interface ServiceResolvedCallback {
+        void onServiceResolved(NsdServiceInfo serviceInfo);
     }
 }

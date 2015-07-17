@@ -18,6 +18,8 @@ damn-fool reason. */
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#ifndef _LIBMSNTP_INTERNET
+#define _LIBMSNTP_INTERNET
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,4 +44,5 @@ int find_address (struct in_addr *address, struct in_addr *anywhere,
 
 #ifdef __cplusplus
 }
+#endif
 #endif

@@ -7,6 +7,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.TextView;
 
 
 /**
@@ -14,6 +15,8 @@ import android.widget.Button;
  */
 public class MainActivityFragment extends Fragment {
     private ICallbacks mCallbacks;
+    private TextView mStatusTV;
+    private Button mListenButton, mSendButton;
 
     public MainActivityFragment() {
     }
@@ -27,18 +30,25 @@ public class MainActivityFragment extends Fragment {
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        Button sendButton = (Button) view.findViewById(R.id.button_send);
-        sendButton.setOnClickListener(new View.OnClickListener() {
+        mStatusTV = (TextView) view.findViewById(R.id.textView_status);
+        mListenButton = (Button) view.findViewById(R.id.button_listen);
+        mSendButton = (Button) view.findViewById(R.id.button_send);
+        mSendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                mStatusTV.setText("Sending");
+                mListenButton.setEnabled(false);
+                mSendButton.setEnabled(false);
                 mCallbacks.startSending();
             }
         });
 
-        Button listenButton = (Button) view.findViewById(R.id.button_listen);
-        listenButton.setOnClickListener(new View.OnClickListener() {
+        mListenButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                mStatusTV.setText("Listening");
+                mListenButton.setEnabled(false);
+                mSendButton.setEnabled(false);
                 mCallbacks.startListening();
             }
         });
@@ -53,5 +63,11 @@ public class MainActivityFragment extends Fragment {
     interface ICallbacks {
         void startSending();
         void startListening();
+    }
+
+    public void resetUI() {
+        mStatusTV.setText("Select an action");
+        mSendButton.setEnabled(true);
+        mListenButton.setEnabled(true);
     }
 }
