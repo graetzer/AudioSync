@@ -166,8 +166,6 @@ AMediaExtractor* decoder_createExtractor(int fd, off64_t offset, off64_t fileSiz
             status = AMediaExtractor_selectTrack(extractor, idx);
             if(status != AMEDIA_OK) return NULL;
 
-
-
             AMediaFormat_delete(format);
             break;
         }
@@ -218,6 +216,7 @@ bool decoder_dequeueBuffer(AMediaCodec *codec, AMediaFormat **format, uint8_t **
         if (*pcmSize < *pcmOffset + info.size) {
             *pcmSize += info.size + 512*256;
             *pcmBuffer = (uint8_t*) realloc(*pcmBuffer, *pcmSize);
+            debugLog("Reallocating");
         }
 
         memcpy(*pcmBuffer + *pcmOffset, buffer + info.offset, (size_t)info.size);

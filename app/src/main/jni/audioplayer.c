@@ -10,12 +10,12 @@
  * of the License.
  */
 
+#include "audioplayer.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
-#include "audioplayer.h"
-
+//#include <android/media/audio_utils/fifo.h>
 
 #include <android/log.h>
 

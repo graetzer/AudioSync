@@ -15,16 +15,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string>
-#include <pthread.h>
-#include <atomic>
-#include <sys/socket.h>
-#include <netdb.h>
 #include <android/log.h>
 
 #include "libmsntp/libmsntp.h"
 #include "jrtplib/rtpsession.h"
 #include "jrtplib/rtppacket.h"
-#include "jrtplib/rtpsources.h"
 #include "jrtplib/rtpsourcedata.h"
 #include "jrtplib/rtpudpv4transmitter.h"
 #include "jrtplib/rtpipv4address.h"
@@ -33,12 +28,11 @@
 #include "jrtplib/rtcpapppacket.h"
 
 #include "audiostream.h"
-#include "decoder.h"
 #include "audioplayer.h"
 #include "apppacket.h"
+#include "decoder.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)
-
 #define SNTP_PORT_OFFSET 3
 
 using namespace jrtplib;
@@ -75,12 +69,16 @@ protected:
             AddDestination(*dest);
             delete(dest);
 
-            // TODO vielleicht dodch besser per broadcast verbreiten.
+            // TODO in zukunft die toString methode von AMediaFormat nehmen
+            // sollte man dekodieren können
+
+            // TODO vielleicht doch besser per broadcast verbreiten.
             // Alternativ
-            const char *mime = "audio/mpeg";
-            audiostream_packet_format packet = {.samplesPerSec = 44100, .numChannels = 2, .mime = mime};
-            size_t appdatalen = sizeof(packet) + sizeof(mime);
-            SendRTCPAPPPacket(AUDIOSTREAM_PACKET_APP_FORMAT, AUDIOSTREAM_APP_NAME, &packet, appdatalen);
+            /*const char *codec = "audio/mpeg";
+            size_t appdatalen = sizeof(audiostream_packet_format);
+            audiostream_packet_format packet = {.samplesPerSec = 44100, .numChannels = 2};
+            memcpy(&(packet.mime), codec, sizeof(codec));
+            SendRTCPAPPPacket(AUDIOSTREAM_PACKET_APP_MEDIAFORMAT, audiostream_app_name, (uint8_t*)&packet, appdatalen);*/
         }
     }
 
@@ -122,12 +120,11 @@ protected:
     void OnAPPPacket(RTCPAPPPacket *apppacket,const RTPTime &receivetime,
                      const RTPAddress *senderaddress)					{
         // TODO
-        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_APP_FORMAT
-            && apppacket->GetAPPDataLength() >= sizeof(audiostream_packet_format)) {
-            audiostream_packet_format *format = (audiostream_packet_format*) apppacket->GetAPPData();
+        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_APP_MEDIAFORMAT) {
+            /*audiostream_packet_format *format = (audiostream_packet_format*) apppacket->GetAPPData();
             // TODO
             debugLog("Received media format: Samples(%d), Channels(%d), MIME(%s)",
-                     format->samplesPerSec, format->numChannels, format->mime);
+                     format->samplesPerSec, format->numChannels, format->mime);*/
         }
     }
 };
@@ -172,7 +169,7 @@ void* _sendStream(void *ctxPtr) {
     //            RTCP Sender Report info will be calculated wrong
     // In this case, we'll be sending 10 samples each second, so we'll
     // put the timestamp unit to (1.0/10.0)
-    sessparams.SetOwnTimestampUnit(1.0/1000.0);// Simon: AMediaExtractor uses microseconds
+    sessparams.SetOwnTimestampUnit(1.0/1000);//AMediaExtractor uses microseconds
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
 
     RTPUDPv4TransmissionParams transparams;
@@ -192,9 +189,9 @@ void* _sendStream(void *ctxPtr) {
                 RTPPacket *pack;
                 while ((pack = sess.GetNextPacket()) != NULL) {
                     debugLog("Found our first sender !\n");
-                    if(pack->GetPacketLength() > 0
-                       && pack->GetPacketData()[pack->GetPacketLength()-1] == '\0') {
-                        debugLog("He said: %s", pack->GetPacketData())
+                    if(pack->GetPayloadLength() > 0
+                       && pack->GetPayloadData()[pack->GetPayloadLength()-1] == '\0') {
+                        debugLog("He said: %s", pack->GetPayloadData());
                     }
                     sess.DeletePacket(pack);
                     waitaround = false;
@@ -216,17 +213,16 @@ void* _sendStream(void *ctxPtr) {
     while(written >= 0 && ctx->isRunning) {
 
         int64_t time = 0;
-        uint8_t buffer[2048];
+        uint8_t buffer[1024];
         written = decoder_extractData(ctx->extractor, buffer, sizeof(buffer), &time);
         if (lastTime == -1) lastTime = time;
         uint32_t timestampinc = (uint32_t) (time - lastTime);// Assuming it will fit
         lastTime = time;
         if (written < 0) {
-            debugLog("Sender: End of stream");
             buffer[0] = '\0';
             status = sess.SendPacket(buffer, 1, 0, true, timestampinc);
+            debugLog("Sender: End of stream");
         } else {
-            debugLog("Sending timestamp %ld", (long)time);
             status = sess.SendPacket(buffer, (size_t)written, 0, false, timestampinc);
         }
         _checkerror(status);
@@ -248,13 +244,13 @@ void* _sendStream(void *ctxPtr) {
         status = sess.Poll();
         checkerror(status);
 #endif // RTP_SUPPORT_THREAD
-        RTPTime::Wait(RTPTime(1,0));// Wait 100ms
+        RTPTime::Wait(RTPTime(0, 25));// Wait 100ms
+        //RTPTime::Wait(RTPTime(0,100));// Wait 100ms
     }
 
     debugLog("I'm done sending");
     sess.BYEDestroy(RTPTime(2,0),0,0);
-    AMediaExtractor_delete(ctx->extractor);
-    ctx->extractor = NULL;
+
     return NULL;
 }
 
@@ -274,7 +270,7 @@ void* _receiveStream(void *ctxPtr) {
     //            RTCP Sender Report info will be calculated wrong
     // In this case, we'll be sending 10 samples each second, so we'll
     // put the timestamp unit to (1.0/10.0)
-    sessparams.SetOwnTimestampUnit(1.0/10.0);
+    sessparams.SetOwnTimestampUnit(1.0/1000.0);
 
     sessparams.SetAcceptOwnPackets(false);
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
@@ -288,25 +284,27 @@ void* _receiveStream(void *ctxPtr) {
     _checkerror(status);
     debugLog("Trying to receive data from %s:%u", ctx->serverhost, ctx->portbase);
 
-    // TODO figure out how to check for connections
-    size_t bufferLength = 1024*1024, bufferOffset = 0;
-    uint8_t *pcmBuffer = (uint8_t *) malloc(bufferLength);
-
     AMediaFormat *format = AMediaFormat_new();
     // TODO figure this out
     AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "audio/mpeg");
     AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, 44100);
     AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, 2);
-
+    AMediaFormat_setInt32(format, "encoder-delay", 576);
+    AMediaFormat_setInt32(format, "encoder-padding", 1579);
 
     AMediaCodec *codec = AMediaCodec_createDecoderByType("audio/mpeg");
     status = AMediaCodec_configure(codec, format, NULL, NULL, 0);
+    if(status != AMEDIA_OK) return NULL;
+    status = AMediaCodec_start(codec);
     if(status != AMEDIA_OK) return NULL;
 
     debugLog("Sending Hi package");
     const char *hi = "HI";
     status = sess.SendPacket(hi, sizeof(hi), 0, false, sizeof(hi));// Say Hi, should cause the server to send data
     _checkerror(status);
+
+    size_t pcmLength = 1024*1024, pcmOffset = 0;
+    uint8_t *pcmBuffer = (uint8_t *) malloc(pcmLength);
 
     bool hasInput = true;
     bool hasOutput = true;
@@ -329,7 +327,7 @@ void* _receiveStream(void *ctxPtr) {
                     debugLog("Received package with timestamp %u", timestamp);
 
                     hasInput = !pack->HasMarker();// We repurposed this as end of stream
-                    if (hasInput && length > 0 && timestamp > 0) {
+                    if (hasInput && length > 0) {
                         status = decoder_enqueueBuffer(codec, payload, length, (int64_t)timestamp);
                         if (status != AMEDIA_OK) hasInput = false;
                     } else if (timestamp > 0) {
@@ -337,7 +335,8 @@ void* _receiveStream(void *ctxPtr) {
                         // Tell the codec we are done
                         decoder_enqueueBuffer(codec, NULL, -1, (int64_t)timestamp);
                     }
-                    hasOutput = decoder_dequeueBuffer(codec, &format, &pcmBuffer, &bufferLength, &bufferOffset);
+                    debugLog("Dequeuing");
+                    hasOutput = decoder_dequeueBuffer(codec, &format, &pcmBuffer, &pcmLength, &pcmOffset);
 
                     sess.DeletePacket(pack);
                 }
@@ -356,21 +355,29 @@ void* _receiveStream(void *ctxPtr) {
 
     debugLog("Received all data, finishing decoding");
     while(hasOutput && status == AMEDIA_OK && ctx->isRunning) {
-        hasOutput = decoder_dequeueBuffer(codec, &format, &pcmBuffer, &bufferLength, &bufferOffset);
+        hasOutput = decoder_dequeueBuffer(codec, &format, &pcmBuffer, &pcmLength, &pcmOffset);
     }
     debugLog("Finished decoding, starting playing");
     // TODO don't use constants
-    if (bufferOffset > 0) audioplayer_startPlayback(pcmBuffer, bufferOffset, 44100, 2);
+    if (pcmOffset > 0) audioplayer_startPlayback(pcmBuffer, pcmOffset, 44100, 2);
 
+    AMediaCodec_stop(codec);
+    AMediaCodec_delete(codec);
     return NULL;
 }
 
 audiostream_context * audiostream_new() {
-    return (audiostream_context *) malloc(sizeof(struct audiostream_context));
+    void *ptr = malloc(sizeof(audiostream_context));
+    memset(ptr, 0, sizeof(audiostream_context));
+    return (audiostream_context *)ptr;
 }
+
 void audiostream_free(audiostream_context *ctx) {
-    if (ctx->serverhost != NULL) free(ctx->serverhost);
-    free(ctx);
+    if (ctx != NULL) {
+        if (ctx->serverhost != NULL) free(ctx->serverhost);
+        if (ctx->extractor != NULL) AMediaExtractor_delete(ctx->extractor);
+        free(ctx);
+    }
 }
 
 void* _serveNTPServer(void *ctxPtr) {
