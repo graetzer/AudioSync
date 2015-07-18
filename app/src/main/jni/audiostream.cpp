@@ -24,26 +24,31 @@
 #include "libmsntp/libmsntp.h"
 #include "jrtplib/rtpsession.h"
 #include "jrtplib/rtppacket.h"
+#include "jrtplib/rtpsources.h"
 #include "jrtplib/rtpsourcedata.h"
 #include "jrtplib/rtpudpv4transmitter.h"
 #include "jrtplib/rtpipv4address.h"
 #include "jrtplib/rtpipv6address.h"
 #include "jrtplib/rtpsessionparams.h"
+#include "jrtplib/rtcpapppacket.h"
 
 #include "audiostream.h"
 #include "decoder.h"
 #include "audioplayer.h"
+#include "apppacket.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)
 
+#define SNTP_PORT_OFFSET 3
+
 using namespace jrtplib;
 
-class ASRTPSession : public jrtplib::RTPSession  {
+class SenderRTPSession : public jrtplib::RTPSession  {
 
 protected:
     RTPAddress* addressFromData(RTPSourceData *dat) {
         short port = 0;
-        const RTPAddress *addr;
+        const RTPAddress *addr = NULL;
         if (dat->GetRTPDataAddress() != 0) addr = dat->GetRTPDataAddress();
         else if (dat->GetRTCPDataAddress() != 0) {
             addr = dat->GetRTCPDataAddress();
@@ -62,20 +67,25 @@ protected:
     }
 
     void OnNewSource(jrtplib::RTPSourceData * dat) {
-        if (dat->IsOwnSSRC())
-            return;
+        if (dat->IsOwnSSRC()) return;
 
         debugLog("Added new source");
         RTPAddress *dest = addressFromData(dat);
         if (dest) {
             AddDestination(*dest);
             delete(dest);
+
+            // TODO vielleicht dodch besser per broadcast verbreiten.
+            // Alternativ
+            const char *mime = "audio/mpeg";
+            audiostream_packet_format packet = {.samplesPerSec = 44100, .numChannels = 2, .mime = mime};
+            size_t appdatalen = sizeof(packet) + sizeof(mime);
+            SendRTCPAPPPacket(AUDIOSTREAM_PACKET_APP_FORMAT, AUDIOSTREAM_APP_NAME, &packet, appdatalen);
         }
     }
 
     void OnBYEPacket(jrtplib::RTPSourceData * dat) {
-        if (dat->IsOwnSSRC())
-            return;
+        if (dat->IsOwnSSRC()) return;
 
         debugLog("Received bye package");
         RTPAddress *dest = addressFromData(dat);
@@ -85,10 +95,8 @@ protected:
         }
     }
     void OnRemoveSource(jrtplib::RTPSourceData * dat) {
-        if (dat->IsOwnSSRC())
-            return;
-        if (dat->ReceivedBYE())
-            return;
+        if (dat->IsOwnSSRC()) return;
+        if (dat->ReceivedBYE()) return;
 
         debugLog("Removing source");
         RTPAddress *dest = addressFromData(dat);
@@ -97,14 +105,33 @@ protected:
             delete(dest);
         }
     }
+
+    void OnAPPPacket(RTCPAPPPacket *apppacket,const RTPTime &receivetime,
+                    const RTPAddress *senderaddress)					{
+        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_APP_CLOCK
+            && apppacket->GetAPPDataLength() >= sizeof(audiostream_packet_clock)) {
+            audiostream_packet_clock *clock = (audiostream_packet_clock*) apppacket->GetAPPData();
+            // TODO
+        }
+    }
 };
 
-#define SNTP_PORT_OFFSET 5
-/*#define RTP_PORT 32443
-#define RTCP_PORT 32444*/
+class ReceiverRTPSession : public jrtplib::RTPSession {
 
-// Opaque pointer
-// TODO make it private, use the init method to return an instance, alternatively just use a c++ class
+protected:
+    void OnAPPPacket(RTCPAPPPacket *apppacket,const RTPTime &receivetime,
+                     const RTPAddress *senderaddress)					{
+        // TODO
+        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_APP_FORMAT
+            && apppacket->GetAPPDataLength() >= sizeof(audiostream_packet_format)) {
+            audiostream_packet_format *format = (audiostream_packet_format*) apppacket->GetAPPData();
+            // TODO
+            debugLog("Received media format: Samples(%d), Channels(%d), MIME(%s)",
+                     format->samplesPerSec, format->numChannels, format->mime);
+        }
+    }
+};
+
 struct audiostream_context {
     //long timeDiff[128];
     uint16_t portbase;
@@ -114,7 +141,7 @@ struct audiostream_context {
     pthread_t networkThread, ntpThread;
 
     //struct timeval clockOffset;
-    AMediaExtractor *extractor;
+    AMediaExtractor *extractor;// At some future point abstract the source behind an interface
     /*uint8_t *buffer;
     size_t bufferLength;*/
     /*
@@ -124,31 +151,6 @@ struct audiostream_context {
     uint16_t* frameBuffer;
     uint16_t samples[];*/
 };
-
-audiostream_context * audiostream_new() {
-    return (audiostream_context *) malloc(sizeof(struct audiostream_context));
-}
-void audiostream_free(audiostream_context *ctx) {
-    if (ctx->serverhost != NULL) free(ctx->serverhost);
-    free(ctx);
-}
-
-void* _serveNTPServer(void *ctxPtr) {
-    audiostream_context *ctx = (audiostream_context *)ctxPtr;
-
-    uint16_t port = ctx->portbase + SNTP_PORT_OFFSET;
-    if (msntp_start_server(port) != 0)
-        return NULL;
-
-    printf("Listening for SNTP clients on port %d...", port);
-    while (ctx->isRunning) {
-        int ret = msntp_serve();
-        if (ret > 0 || ret < -1) return NULL;
-    }
-
-    msntp_stop_server();
-    return NULL;
-}
 
 static void _checkerror(int rtperr) {
     if (rtperr < 0) {
@@ -160,6 +162,10 @@ static void _checkerror(int rtperr) {
 // Waiting for connections and sending them data
 void* _sendStream(void *ctxPtr) {
     audiostream_context *ctx = (audiostream_context *)ctxPtr;
+    if (!ctx->extractor) {
+        debugLog("No datasource");
+        return NULL;
+    }
 
     RTPSessionParams sessparams;
     // IMPORTANT: The local timestamp unit MUST be set, otherwise
@@ -171,7 +177,7 @@ void* _sendStream(void *ctxPtr) {
 
     RTPUDPv4TransmissionParams transparams;
     transparams.SetPortbase(ctx->portbase);
-    ASRTPSession sess;
+    SenderRTPSession sess;
     int status = sess.Create(sessparams, &transparams);
     _checkerror(status);
     sess.SetDefaultMark(false);
@@ -186,6 +192,10 @@ void* _sendStream(void *ctxPtr) {
                 RTPPacket *pack;
                 while ((pack = sess.GetNextPacket()) != NULL) {
                     debugLog("Found our first sender !\n");
+                    if(pack->GetPacketLength() > 0
+                       && pack->GetPacketData()[pack->GetPacketLength()-1] == '\0') {
+                        debugLog("He said: %s", pack->GetPacketData())
+                    }
                     sess.DeletePacket(pack);
                     waitaround = false;
                 }
@@ -196,17 +206,19 @@ void* _sendStream(void *ctxPtr) {
         debugLog("Waiting....");
 #ifndef RTP_SUPPORT_THREAD
         status = sess.Poll();
+        _checkerror(status);
 #endif
     }
 
     debugLog("Client connected, start sending");
     ssize_t written = 0;
-    int64_t lastTime = 0;
+    int64_t lastTime = -1;
     while(written >= 0 && ctx->isRunning) {
 
         int64_t time = 0;
-        uint8_t buffer[1024];
+        uint8_t buffer[2048];
         written = decoder_extractData(ctx->extractor, buffer, sizeof(buffer), &time);
+        if (lastTime == -1) lastTime = time;
         uint32_t timestampinc = (uint32_t) (time - lastTime);// Assuming it will fit
         lastTime = time;
         if (written < 0) {
@@ -236,13 +248,13 @@ void* _sendStream(void *ctxPtr) {
         status = sess.Poll();
         checkerror(status);
 #endif // RTP_SUPPORT_THREAD
-
         RTPTime::Wait(RTPTime(1,0));// Wait 100ms
     }
 
     debugLog("I'm done sending");
-
     sess.BYEDestroy(RTPTime(2,0),0,0);
+    AMediaExtractor_delete(ctx->extractor);
+    ctx->extractor = NULL;
     return NULL;
 }
 
@@ -350,6 +362,31 @@ void* _receiveStream(void *ctxPtr) {
     // TODO don't use constants
     if (bufferOffset > 0) audioplayer_startPlayback(pcmBuffer, bufferOffset, 44100, 2);
 
+    return NULL;
+}
+
+audiostream_context * audiostream_new() {
+    return (audiostream_context *) malloc(sizeof(struct audiostream_context));
+}
+void audiostream_free(audiostream_context *ctx) {
+    if (ctx->serverhost != NULL) free(ctx->serverhost);
+    free(ctx);
+}
+
+void* _serveNTPServer(void *ctxPtr) {
+    audiostream_context *ctx = (audiostream_context *)ctxPtr;
+
+    uint16_t port = ctx->portbase + (uint16_t)SNTP_PORT_OFFSET;
+    if (msntp_start_server(port) != 0)
+        return NULL;
+
+    printf("Listening for SNTP clients on port %d...", port);
+    while (ctx->isRunning) {
+        int ret = msntp_serve();
+        if (ret > 0 || ret < -1) return NULL;
+    }
+
+    msntp_stop_server();
     return NULL;
 }
 
