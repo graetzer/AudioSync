@@ -11,21 +11,21 @@
  */
 
 #include "de_rwth_aachen_comsys_audiosync_AudioCore.h"
-
-#include <jni.h>
-#include <signal.h>
-#include <pthread.h>
-#include <assert.h>
 #include <android/log.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
-
-#define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
-//#define debugLog(...) printf(__VA_ARGS__)
-
+#include <signal.h>
+#include <assert.h>
 #include "audioplayer.h"
 #include "audiostream.h"
 #include "decoder.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioCore", __VA_ARGS__)
+//#define debugLog(...) printf(__VA_ARGS__)
 
 #ifdef RTP_SUPPORT_THREAD
 void thread_exit_handler(int sig) {
@@ -35,7 +35,7 @@ void thread_exit_handler(int sig) {
 #endif
 
 // Global audiostream manager
-static audiostream_context *audioCtx;
+AudioStreamSession *audioSession;
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -44,7 +44,6 @@ static audiostream_context *audioCtx;
  */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint samplesPerSec, jint framesPerBuffer) {
     audioplayer_init(samplesPerSec, framesPerBuffer);
-    audioCtx = audiostream_new();
 
 #ifdef RTP_SUPPORT_THREAD
     // Workaround to kill threads since pthread_cancel is not supported
@@ -59,9 +58,9 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, job
 }
 
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio (JNIEnv *env, jobject thiz) {
-    audiostream_stop(audioCtx);
+    if (audioSession) audioSession->Stop();
+    if (audioSession) delete audioSession;
     audioplayer_cleanup();// Player stops automatically
-    audiostream_free(audioCtx);
 }
 
 //static const char android[] =
@@ -78,10 +77,10 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     //audioplayer_startPlayback(buffer, sizeof(android), 8000, 1);/*
 
     AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
-    const char *path = (*env)->GetStringUTFChars(env, jPath, 0);
+    const char *path = env->GetStringUTFChars(jPath, 0);
     // Open the asset from the assets/ folder
     AAsset *asset = AAssetManager_open(mgr, path, AASSET_MODE_UNKNOWN);
-    (*env)->ReleaseStringUTFChars(env, jPath, path);
+    env->ReleaseStringUTFChars(jPath, path);
     if (NULL == asset) {
         debugLog("_ASSET_NOT_FOUND_");
         return;
@@ -93,7 +92,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     AAsset_close(asset);
 
     AMediaExtractor *extr = decoder_createExtractor(fd, outStart, fileSize);
-    audiostream_startStreaming(audioCtx, portbase, extr);//*/
+    audioSession = audiostream_startStreaming((uint16_t)portbase, extr);//*/
 
     /*debugLog("%s size: %ld %ld", path, (long)fileSize, (long)outStart);
     struct decoder_audio audio = decoder_decodeFile(fd, outStart, fileSize);
@@ -111,9 +110,9 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
  * Signature: (Ljava/lang/String;I)V
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startReceiving (JNIEnv *env, jobject thiz, jstring jHost, jint portbase) {
-    const char *host = (*env)->GetStringUTFChars(env, jHost, 0);
-    audiostream_startReceiving(audioCtx, host, portbase);
-    (*env)->ReleaseStringUTFChars(env, jHost, host);
+    const char *host = env->GetStringUTFChars(jHost, 0);
+    audioSession = audiostream_startReceiving(host, (uint16_t)portbase);
+    env->ReleaseStringUTFChars(jHost, host);
 }
 
 /*
@@ -123,5 +122,9 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startRece
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServices(JNIEnv *env, jobject thiz) {
     audioplayer_stopPlayback();
-    audiostream_stop(audioCtx);
+    if (audioSession) audioSession->Stop();
 }
+
+#ifdef __cplusplus
+}
+#endif

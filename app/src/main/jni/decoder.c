@@ -206,7 +206,8 @@ int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize,
     return AMEDIA_OK;
 }
 
-bool decoder_dequeueBuffer(AMediaCodec *codec, AMediaFormat **format, uint8_t **pcmBuffer, size_t *pcmSize, size_t *pcmOffset) {
+bool decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, size_t *pcmSize, size_t *pcmOffset) {
+    AMediaCodec *format;
     AMediaCodecBufferInfo info;
     ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);
     if (bufIdx >= 0) {
@@ -225,9 +226,9 @@ bool decoder_dequeueBuffer(AMediaCodec *codec, AMediaFormat **format, uint8_t **
         int status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, false);
         if(status != AMEDIA_OK) return false;
     } else if (bufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
-        if (*format != NULL) AMediaFormat_delete(*format);
-        *format = AMediaCodec_getOutputFormat(codec);
-        debugLog("Output format changed to: %s", AMediaFormat_toString(*format));
+        if (format != NULL) AMediaFormat_delete(format);
+        format = AMediaCodec_getOutputFormat(codec);
+        debugLog("Output format changed to: %s", AMediaFormat_toString(format));
     }
 
     return (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;

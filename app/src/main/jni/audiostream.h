@@ -12,24 +12,41 @@
 
 #ifndef AUDIOSYNC_STREAM
 #define AUDIOSYNC_STREAM
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #include <media/NdkMediaExtractor.h>
+#include <media/NdkMediaFormat.h>
+#include <pthread.h>
+#include "jrtplib/rtpsession.h"
 
-//struct audiostream_context;
-typedef struct audiostream_context  audiostream_context;
+class AudioStreamSession : public jrtplib::RTPSession {
+public:
+    virtual ~AudioStreamSession() {
+        if (format) AMediaFormat_delete(format);
+    }
+    virtual void Stop() {
+        if (isRunning) {
+            isRunning = false;// Should kill them all
 
-audiostream_context * audiostream_new();
-void audiostream_free(audiostream_context *ctx);
+            if (networkThread && pthread_join(networkThread, NULL)) {
+                //perror("Error joining thread");
+            }
+            networkThread = 0;
+            if (ntpThread && pthread_join(ntpThread, NULL)) {
+                //perror("Error joining thread");
+            }
+            ntpThread = 0;
+        }
+    };
 
-void audiostream_startStreaming(audiostream_context* ctx, uint16_t portbase, AMediaExtractor *extractor);
+    bool isRunning = true;
+    pthread_t networkThread = 0, ntpThread = 0;
+protected:
+    AMediaFormat *format;
+};
+
+// Initializer functions
+AudioStreamSession *audiostream_startStreaming(uint16_t portbase, AMediaExtractor *extractor);
 // TODO interrupted callback
-void audiostream_startReceiving(audiostream_context *ctx, const char *host, uint16_t portbase);
-void audiostream_stop(audiostream_context *ctx);
+AudioStreamSession * audiostream_startReceiving(const char *host, uint16_t portbase);
 
-#ifdef __cplusplus
-}
-#endif
 #endif
