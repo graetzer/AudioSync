@@ -38,10 +38,16 @@ public:
         }
     };
 
-    bool isRunning = true;
+    bool IsRunning() {
+        return isRunning;
+    }
+
     pthread_t networkThread = 0, ntpThread = 0;
 protected:
+    bool isRunning = true;
     AMediaFormat *format;
+
+    void log(const char* logStr, ...);
 };
 
 // Initializer functions

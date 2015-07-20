@@ -55,6 +55,7 @@ public class MainActivity extends Activity implements MainActivityFragment.ICall
     @Override
     protected void onPause() {
         super.onPause();
+        mNSDHelper.unregisterService();
         mAudioCore.stopPlaying();
 
         Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);

@@ -207,12 +207,12 @@ int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize,
 }
 
 bool decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, size_t *pcmSize, size_t *pcmOffset) {
-    AMediaCodec *format;
+    AMediaFormat *format = NULL;
     AMediaCodecBufferInfo info;
     ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);
     if (bufIdx >= 0) {
 
-        uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, bufIdx, NULL);
+        uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, (size_t)bufIdx, NULL);
         // In case our out buffer is too small, make it bigger
         if (*pcmSize < *pcmOffset + info.size) {
             *pcmSize += info.size + 512*256;
@@ -223,7 +223,7 @@ bool decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, size_t *pcmS
         memcpy(*pcmBuffer + *pcmOffset, buffer + info.offset, (size_t)info.size);
         *pcmOffset += info.size;
 
-        int status = AMediaCodec_releaseOutputBuffer(codec, bufIdx, false);
+        int status = AMediaCodec_releaseOutputBuffer(codec, (size_t)bufIdx, false);
         if(status != AMEDIA_OK) return false;
     } else if (bufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
         if (format != NULL) AMediaFormat_delete(format);

@@ -25,21 +25,15 @@ extern "C" {
 // Packettype should be indicated through the subtype in the RC field
 extern const uint8_t *audiostream_app_name;
 
-#define AUDIOSTREAM_PACKET_APP_MEDIAFORMAT 1
+#define AUDIOSTREAM_PACKET_MEDIAFORMAT 1
 // Try to parse the string returned from AMediaFormat_toString and use all the parameters
 AMediaFormat *audiostream_createFormat(char *formatString);
 
-/*typedef struct {
-    int32_t samplesPerSec;
-    int32_t numChannels;
-    char mime[64];// Maybe we should make this one bigger
-} __attribute__ ((__packed__)) audiostream_packet_format;*/
-
-#define AUDIOSTREAM_PACKET_APP_CLOCK 2
+#define AUDIOSTREAM_PACKET_CLOCKOFFSET 2
 typedef struct {
-    uint32_t ssrc;
-    int32_t clockOffset;
-} __attribute__ ((__packed__)) audiostream_packet_clock;
+    int64_t offsetSeconds;// This represents the number of whole seconds of elapsed time.
+    int64_t offetUSeconds;//  This is the fraction of a second, represented as the number of microseconds. It is always less than one million.
+} __attribute__ ((__packed__)) audiostream_clockOffset;
 
 #ifdef __cplusplus
 }

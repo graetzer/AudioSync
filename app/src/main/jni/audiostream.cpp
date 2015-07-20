@@ -41,9 +41,20 @@ using namespace jrtplib;
 
 static void _checkerror(int rtperr) {
     if (rtperr < 0) {
-        debugLog("RTP Error %s", RTPGetErrorString(rtperr).c_str());
+        debugLog("RTP Error: %s", RTPGetErrorString(rtperr).c_str());
         pthread_exit(0);
     }
+}
+
+void AudioStreamSession::log(const char *logStr, ...) {
+    va_list ap;
+    va_start(ap, logStr);
+#ifdef __ANDROID__
+    __android_log_vprint(ANDROID_LOG_DEBUG, "AudioStreamSession", logStr, ap);
+#else
+    vprintf(logStr, ap);
+#endif
+    va_end(ap);
 }
 
 class SenderSession : public AudioStreamSession {
@@ -58,42 +69,48 @@ public:
     void RunNetwork() {
         // Waiting for connections and sending them data
         if (!extractor) {
-            debugLog("No datasource");
+            log("No datasource");
             return;
         }
-        if (format == NULL)
-            format = AMediaExtractor_getTrackFormat(extractor,
-                                                    AMediaExtractor_getSampleTrackIndex(extractor));
+        if (format == NULL) {
+            int idx = AMediaExtractor_getSampleTrackIndex(extractor);// If this returns -1, we crash
+            format = AMediaExtractor_getTrackFormat(extractor, (size_t)idx);
+        }
 
         int status = 0;
         while (connectedSources == 0 && isRunning) {
-            RTPTime::Wait(RTPTime(1, 0));// Wait 1s
-            debugLog("Waiting for clients....");
+            RTPTime::Wait(RTPTime(2, 0));// Wait 2s
+            log("Waiting for clients....");
 #ifndef RTP_SUPPORT_THREAD
             status = sess->Poll();
             _checkerror(status);
 #endif // RTP_SUPPORT_THREAD
         }
+        if (!isRunning) return;
 
-        debugLog("Client connected, start sending");
+        log("Client connected, start sending");
         ssize_t written = 0;
         int64_t lastTime = -1;
         while (written >= 0 && isRunning) {
-
             int64_t time = 0;
             uint8_t buffer[1024];
             written = decoder_extractData(extractor, buffer, sizeof(buffer), &time);
             if (lastTime == -1) lastTime = time;
             uint32_t timestampinc = (uint32_t) (time - lastTime);// Assuming it will fit
             lastTime = time;
+
             if (written < 0) {
                 buffer[0] = '\0';
                 status = SendPacket(buffer, 1, 0, true, timestampinc);
-                debugLog("Sender: End of stream");
+                log("Sender: End of stream");
             } else {
                 status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
+                //log("Sending package for %.2fs", time / 1000.0);
             }
             _checkerror(status);
+            RTPTime::Wait(RTPTime(0, 100));// Wait 100ms
+
+
             // Not really necessary
             BeginDataAccess();
             // check incoming packets TODO use example4.cpp to add destinations
@@ -101,7 +118,7 @@ public:
                 do {
                     RTPPacket *pack;
                     while ((pack = GetNextPacket()) != NULL) {
-                        debugLog("The sender should not get packets !\n");
+                        log("The sender should not get packets !\n");
                         DeletePacket(pack);
                     }
                 } while (GotoNextSourceWithData());
@@ -112,11 +129,10 @@ public:
             status = Poll();
             _checkerror(status);
 #endif // RTP_SUPPORT_THREAD
-            RTPTime::Wait(RTPTime(0, 25));// Wait 100ms
-            //RTPTime::Wait(RTPTime(0,100));// Wait 100ms
+
         }
 
-        debugLog("I'm done sending");
+        log("I'm done sending");
         BYEDestroy(RTPTime(2, 0), 0, 0);
     }
 
@@ -144,7 +160,7 @@ protected:
     void OnNewSource(jrtplib::RTPSourceData *dat) {
         if (dat->IsOwnSSRC()) return;
 
-        debugLog("Added new source");
+        log("Added new source");
         RTPAddress *dest = addressFromData(dat);
         if (dest) {
             AddDestination(*dest);
@@ -153,7 +169,7 @@ protected:
 
             if (this->format) {
                 const char *formatString = AMediaFormat_toString(format);
-                SendRTCPAPPPacket(AUDIOSTREAM_PACKET_APP_MEDIAFORMAT, audiostream_app_name,
+                SendRTCPAPPPacket(AUDIOSTREAM_PACKET_MEDIAFORMAT, audiostream_app_name,
                                   (uint8_t *) formatString, strlen(formatString));
             }
         }
@@ -162,7 +178,7 @@ protected:
     void OnBYEPacket(jrtplib::RTPSourceData *dat) {
         if (dat->IsOwnSSRC()) return;
 
-        debugLog("Received bye package");
+        log("Received bye package");
         RTPAddress *dest = addressFromData(dat);
         if (dest != NULL) {
             DeleteDestination(*dest);
@@ -175,7 +191,7 @@ protected:
         if (dat->IsOwnSSRC()) return;
         if (dat->ReceivedBYE()) return;
 
-        debugLog("Removing source");
+        log("Removing source");
         RTPAddress *dest = addressFromData(dat);
         if (dest != NULL) {
             DeleteDestination(*dest);
@@ -186,15 +202,15 @@ protected:
 
     void OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receivetime,
                      const RTPAddress *senderaddress) {
-        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_APP_CLOCK
-            && apppacket->GetAPPDataLength() >= sizeof(audiostream_packet_clock)) {
-            audiostream_packet_clock *clock = (audiostream_packet_clock *) apppacket->GetAPPData();
+        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCKOFFSET
+            && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockOffset)) {
+            audiostream_clockOffset *clock = (audiostream_clockOffset *) apppacket->GetAPPData();
             // TODO
         }
     }
 };
 
-static void *runThread(void *ptr) {
+static void *_runSendThread(void *ptr) {
     ((SenderSession *) ptr)->RunNetwork();
     return NULL;
 }
@@ -208,7 +224,7 @@ void *_serveNTPServer(void *ctxPtr) {
         return NULL;
 
     printf("Listening for SNTP clients on port %d...", port);
-    while (sess->isRunning) {
+    while (sess->IsRunning()) {
         int ret = msntp_serve();
         if (ret > 0 || ret < -1) return NULL;
     }
@@ -233,11 +249,12 @@ AudioStreamSession *audiostream_startStreaming(uint16_t portbase,
     _checkerror(status);
     sess->SetDefaultMark(false);
     sess->extractor = extractor;
-    pthread_create(&(sess->networkThread), NULL, &(runThread), sess);
+    pthread_create(&(sess->networkThread), NULL, &(_runSendThread), sess);
     debugLog("Started RTP server on port %u, now waiting for clients", portbase);
 
     _portbase = portbase;
     //pthread_create(&(ctx->ntpThread), NULL, _serveNTPServer, ctx);
+    return sess;
 }
 
 class ReceiverSession : public AudioStreamSession {
@@ -247,19 +264,23 @@ public:
     }
 
     void RunNetwork() {
-        debugLog("Sending Hi package");
+        log("Sending Hi package");
         const char *hi = "HI";
         int status = SendPacket(hi, sizeof(hi), 0, false,
                                 sizeof(hi));// Say Hi, should cause the server to send data
         _checkerror(status);
 
         while (codec == NULL && isRunning) {
-            debugLog("Waiting for codec RTCP package...");
+            log("Waiting for codec RTCP package...");
 #ifndef RTP_SUPPORT_THREAD
             status = sess->Poll();
             _checkerror(status);
 #endif // RTP_SUPPORT_THREAD
             RTPTime::Wait(RTPTime(1, 0));// Wait 1s
+        }
+        if (codec == NULL) {
+            log("No codec set");
+            return;
         }
 
         size_t pcmLength = 1024 * 1024, pcmOffset = 0;
@@ -283,26 +304,25 @@ public:
                         uint8_t *payload = pack->GetPayloadData();
                         size_t length = pack->GetPayloadLength();
                         uint32_t timestamp = pack->GetTimestamp();
-
                         // record first timestamp and use differences
                         if (first == -1) first = timestamp;
                         timestamp -= first;
-                        debugLog("Received package with timestamp %u", timestamp);
+                        log("Received package %.2fs", timestamp / 1000.0);
+                        log("Received sequence %d", pack->GetSequenceNumber());
 
-                        hasInput = !pack->HasMarker();// We repurposed this as end of stream
+
+                        hasInput = !pack->HasMarker();// We repurposed this as end of file
                         if (hasInput && length > 0) {
                             status = decoder_enqueueBuffer(codec, payload, length,
                                                            (int64_t) timestamp);
                             if (status != AMEDIA_OK) hasInput = false;
                         } else if (timestamp > 0) {
-                            debugLog("Receiver: End of stream");
+                            log("Receiver: End of file");
                             // Tell the codec we are done
                             decoder_enqueueBuffer(codec, NULL, -1, (int64_t) timestamp);
                         }
-                        debugLog("Dequeuing");
-                        hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength,
-                                                          &pcmOffset);
-
+                        log("Dequeuing");
+                        hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength,  &pcmOffset);
                         DeletePacket(pack);
                     }
                 } while (GotoNextSourceWithData());
@@ -318,32 +338,48 @@ public:
 
         BYEDestroy(RTPTime(1, 0), 0, 0);
 
-        debugLog("Received all data, finishing decoding");
+        log("Received all data");
         while (hasOutput && status == AMEDIA_OK && isRunning) {
             hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength, &pcmOffset);
         }
         AMediaCodec_stop(codec);
+        log("Finished decoding, starting playing");
 
-        debugLog("Finished decoding, starting playing");
-        // TODO don't use constants
-        if (pcmOffset > 0) audioplayer_startPlayback(pcmBuffer, pcmOffset, 44100, 2);
+        if (pcmOffset > 0) {
+            int32_t samples = 44100, channels = 1;
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &samples);
+            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
+            audioplayer_startPlayback(pcmBuffer, pcmOffset, samples, channels);
+        }
     }
 
     void SetFormat(AMediaFormat *newFormat) {
 
         const char *mime;
         if (AMediaFormat_getString(newFormat, AMEDIAFORMAT_KEY_MIME, &mime)) {
-            AMediaCodec *newCodec = AMediaCodec_createDecoderByType(mime);
-            int status = AMediaCodec_configure(newCodec, format, NULL, NULL, 0);
-            if (status != AMEDIA_OK) return;
+            log("New format %s and creating codec", mime);
 
-            if (this->format != NULL) AMediaFormat_delete(this->format);
-            this->format = newFormat;
-            this->codec = newCodec;
+            AMediaCodec *newCodec = AMediaCodec_createDecoderByType(mime);
+            if (newCodec) {
+                int status = AMediaCodec_configure(newCodec, newFormat, NULL, NULL, 0);
+                if (status != AMEDIA_OK) return;
+
+                if (this->format != NULL) AMediaFormat_delete(this->format);
+                this->format = newFormat;
+                this->codec = newCodec;
+            } else {
+                log("Could not create codec");
+            }
 
             // TODO in case a codec changes mid-stream, we would have to figure out if it
             // needs to be started
         }
+    }
+
+    void SetClockOffset(struct timeval val) {
+        audiostream_clockOffset off = {.offsetSeconds = val.tv_sec, .offetUSeconds = val.tv_usec};
+        this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCKOFFSET, audiostream_app_name, &off,
+                                sizeof(audiostream_clockOffset));
     }
 
 protected:
@@ -352,23 +388,43 @@ protected:
 
     void OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receivetime,
                      const RTPAddress *senderaddress) {
-        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_APP_MEDIAFORMAT) {
+        if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_MEDIAFORMAT) {
             char *formatString = (char *) apppacket->GetAPPData();
             if (formatString[apppacket->GetAPPDataLength() - 1] == '\0') {
-                debugLog("Received format string %s", formatString);
+                log("Received format string %s", formatString);
                 AMediaFormat *newFormat = audiostream_createFormat(formatString);
 
                 if (newFormat != NULL) {
-                    debugLog("Parsed format string %s", AMediaFormat_toString(newFormat));
-                    SetFormat(newFormat);
+                    log("Parsed format string %s", AMediaFormat_toString(newFormat));
+                    AMediaFormat_delete(newFormat);
+                    // TODO activate this again
+                    //SetFormat(newFormat);
                 }
             }
         }
     }
 };
 
-static void *runReceiveThread(void *ptr) {
+static void *_runReceiveThread(void *ptr) {
     ((ReceiverSession *) ptr)->RunNetwork();
+    return NULL;
+}
+
+static void *_runNTPClient(void *ptr) {
+    ReceiverSession *sess = (ReceiverSession *) ptr;
+    char *host = strdup("");
+    int port = 123 + SNTP_PORT_OFFSET;
+
+    while (sess->IsRunning()) {
+        struct timeval tv;
+        int err = msntp_get_offset(host, port, &tv);
+        if (err) {
+            debugLog("NTP client error %d", err);
+        } else {
+            sess->SetClockOffset(tv);
+        }
+    }
+    free(host);
     return NULL;
 }
 
@@ -385,23 +441,23 @@ AudioStreamSession *audiostream_startReceiving(const char *host, uint16_t portba
     AMediaFormat_setInt32(format, "encoder-padding", 1579);
     sess->SetFormat(format);
 
-    RTPIPv4Address addr(ntohl(inet_addr(host)), portbase);
-    int status = sess->AddDestination(addr);
-    _checkerror(status);
-    debugLog("Trying to receive data from %s:%u", host, portbase);
-
     sessparams.SetOwnTimestampUnit(TIMESTAMP_UNITS);
     sessparams.SetAcceptOwnPackets(false);
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
     //uint16_t portbase = RTP_PORT;
     transparams.SetPortbase(portbase);
-    status = sess->Create(sessparams, &transparams);
+    int status = sess->Create(sessparams, &transparams);
+    _checkerror(status);
+
+    debugLog("Adding Destination %s:%u", host, portbase);
+    RTPIPv4Address addr(ntohl(inet_addr(host)), portbase);
+    status = sess->AddDestination(addr);
     _checkerror(status);
 
     // TODO try to set higher priorities on threads
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    pthread_create(&(sess->networkThread), &attr, &runReceiveThread, sess);
+    pthread_create(&(sess->networkThread), &attr, &_runReceiveThread, sess);
 
     return sess;
 }

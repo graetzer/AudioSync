@@ -30,7 +30,7 @@ public class NsdHelper {
     NsdManager.DiscoveryListener mDiscoveryListener;
     NsdManager.RegistrationListener mRegistrationListener;
     ServiceResolvedCallback mServiceResolvedCallback = null;
-    boolean mDidSendBroadcast = false;
+    boolean mSendingBroadcasts = false;
 
     public static final String SERVICE_TYPE = "_rtp._udp.";
 
@@ -65,7 +65,7 @@ public class NsdHelper {
                 Log.d(TAG, "Service discovery success " + service);
                 if (!service.getServiceType().equals(SERVICE_TYPE)) {
                     Log.d(TAG, "Unknown Service Type: " + service.getServiceType());
-                } else if (service.getServiceName().equals(mServiceName) && mDidSendBroadcast) {
+                } else if (service.getServiceName().equals(mServiceName) && mSendingBroadcasts) {
                     // This is only the same machine if we did send out a broadcast too
                     Log.d(TAG, "Same machine: " + mServiceName);
                 }
@@ -113,14 +113,14 @@ public class NsdHelper {
             public void onServiceResolved(NsdServiceInfo serviceInfo) {
                 Log.e(TAG, "Resolve Succeeded. " + serviceInfo);
 
-                if (mDidSendBroadcast && serviceInfo.getServiceName().equals(mServiceName)) {
+                if (mSendingBroadcasts && serviceInfo.getServiceName().equals(mServiceName)) {
                     Log.d(TAG, "Same IP.");
-                    return;
-                }
-                mService = serviceInfo;
-                if (mServiceResolvedCallback != null) {
-                    mServiceResolvedCallback.onServiceResolved(mService);
-                    stopDiscovery();
+                } else {
+                    mService = serviceInfo;
+                    if (mServiceResolvedCallback != null) {
+                        mServiceResolvedCallback.onServiceResolved(mService);
+                        stopDiscovery();
+                    }
                 }
             }
         };
@@ -150,19 +150,24 @@ public class NsdHelper {
     }
 
     public void registerService(int port) {
-        NsdServiceInfo serviceInfo  = new NsdServiceInfo();
-        serviceInfo.setPort(port);
-        serviceInfo.setServiceName(mServiceName);
-        serviceInfo.setServiceType(SERVICE_TYPE);
-        //serviceInfo.setAttribute();
+        if (!mSendingBroadcasts) {
+            NsdServiceInfo serviceInfo  = new NsdServiceInfo();
+            serviceInfo.setPort(port);
+            serviceInfo.setServiceName(mServiceName);
+            serviceInfo.setServiceType(SERVICE_TYPE);
+            //serviceInfo.setAttribute();
 
-        mDidSendBroadcast = true;
-        mNsdManager.registerService(
-                serviceInfo, NsdManager.PROTOCOL_DNS_SD, mRegistrationListener);
+            mSendingBroadcasts = true;
+            mNsdManager.registerService(
+                    serviceInfo, NsdManager.PROTOCOL_DNS_SD, mRegistrationListener);
+        }
     }
 
     public void unregisterService() {
-        mNsdManager.unregisterService(mRegistrationListener);
+        if (mSendingBroadcasts) {
+            mSendingBroadcasts = false;
+            mNsdManager.unregisterService(mRegistrationListener);
+        }
     }
 
     public void discoverServices(ServiceResolvedCallback callback) {
