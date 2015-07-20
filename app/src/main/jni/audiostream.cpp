@@ -35,6 +35,11 @@
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioSync", __VA_ARGS__)
 #define SNTP_PORT_OFFSET 3
+// IMPORTANT: The local timestamp unit MUST be set, otherwise
+//            RTCP Sender Report info will be calculated wrong
+//            In this case, we'll be sending 1000 samples each second, so we'll
+//            put the timestamp unit to (1.0/1000.0)
+// AMediaExtractor uses microseconds too, so we can transport the correct playback time
 #define TIMESTAMP_UNITS (1.0 / 1000.0)
 
 using namespace jrtplib;
@@ -108,10 +113,14 @@ public:
                 //log("Sending package for %.2fs", time / 1000.0);
             }
             _checkerror(status);
-            RTPTime::Wait(RTPTime(0, 100));// Wait 100ms
+
+            // Don't decrease the waiting time too much, it seems sending a great number
+            // of packets very fast, will cause the network (or the client) to drop a high
+            // number of these packets. In any case the client needs to mitigate this.
+            RTPTime::Wait(RTPTime(0, 1000));// Wait 1000us
 
 
-            // Not really necessary
+            // Not really necessary, we are not using this
             BeginDataAccess();
             // check incoming packets TODO use example4.cpp to add destinations
             if (GotoFirstSourceWithData()) {
@@ -129,7 +138,6 @@ public:
             status = Poll();
             _checkerror(status);
 #endif // RTP_SUPPORT_THREAD
-
         }
 
         log("I'm done sending");
@@ -242,7 +250,7 @@ AudioStreamSession *audiostream_startStreaming(uint16_t portbase,
     //            RTCP Sender Report info will be calculated wrong
     // In this case, we'll be sending 10 samples each second, so we'll
     // put the timestamp unit to (1.0/10.0)
-    sessparams.SetOwnTimestampUnit(TIMESTAMP_UNITS);//AMediaExtractor uses microseconds
+    sessparams.SetOwnTimestampUnit(TIMESTAMP_UNITS);
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
     transparams.SetPortbase(portbase);
     int status = sess->Create(sessparams, &transparams);
@@ -276,7 +284,7 @@ public:
             status = sess->Poll();
             _checkerror(status);
 #endif // RTP_SUPPORT_THREAD
-            RTPTime::Wait(RTPTime(1, 0));// Wait 1s
+            RTPTime::Wait(RTPTime(2, 0));// Wait 1s
         }
         if (codec == NULL) {
             log("No codec set");
@@ -293,6 +301,7 @@ public:
         bool hasInput = true;
         bool hasOutput = true;
         int32_t first = -1;
+        int16_t sequence = 0;
         while (hasInput && isRunning) {
 
             BeginDataAccess();
@@ -301,27 +310,31 @@ public:
                 do {
                     RTPPacket *pack;
                     while ((pack = GetNextPacket()) != NULL) {
-                        uint8_t *payload = pack->GetPayloadData();
-                        size_t length = pack->GetPayloadLength();
+
+                        // Calculate playback time,
                         uint32_t timestamp = pack->GetTimestamp();
                         // record first timestamp and use differences
-                        if (first == -1) first = timestamp;
+                        if (first == -1) {
+                            first = timestamp;
+                            sequence = pack->GetSequenceNumber();
+                        }
                         timestamp -= first;
-                        log("Received package %.2fs", timestamp / 1000.0);
-                        log("Received sequence %d", pack->GetSequenceNumber());
-
+                        if (pack->GetSequenceNumber() != sequence+1) {
+                            log("Sequence number jumped from %u to %u - %.2fs. Flushing codec", sequence, pack->GetSequenceNumber(), timestamp / 1000.0);
+                        }
+                        sequence = pack->GetSequenceNumber();
 
                         hasInput = !pack->HasMarker();// We repurposed this as end of file
-                        if (hasInput && length > 0) {
-                            status = decoder_enqueueBuffer(codec, payload, length,
-                                                           (int64_t) timestamp);
+                        if (hasInput) {
+                            uint8_t *payload = pack->GetPayloadData();
+                            size_t length = pack->GetPayloadLength();
+                            status = decoder_enqueueBuffer(codec, payload, length, (int64_t) timestamp);
                             if (status != AMEDIA_OK) hasInput = false;
                         } else if (timestamp > 0) {
                             log("Receiver: End of file");
                             // Tell the codec we are done
                             decoder_enqueueBuffer(codec, NULL, -1, (int64_t) timestamp);
                         }
-                        log("Dequeuing");
                         hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength,  &pcmOffset);
                         DeletePacket(pack);
                     }

@@ -1254,7 +1254,7 @@ int RTPUDPv4Transmitter::PollSocket(bool rtp)
 {
 	//RTPSOCKLENTYPE fromlen;
 	socklen_t fromlen;
-	int recvlen;
+	ssize_t recvlen;
 	char packetbuffer[RTPUDPV4TRANS_MAXPACKSIZE];
 #if (defined(WIN32) || defined(_WIN32_WCE))
 	SOCKET sock;
@@ -1305,9 +1305,9 @@ int RTPUDPv4Transmitter::PollSocket(bool rtp)
 					RTPDelete(addr,GetMemoryManager());
 					return ERR_RTP_OUTOFMEM;
 				}
-				memcpy(datacopy,packetbuffer,recvlen);
+				memcpy(datacopy,packetbuffer,(size_t)recvlen);
 				
-				pack = RTPNew(GetMemoryManager(),RTPMEM_TYPE_CLASS_RTPRAWPACKET) RTPRawPacket(datacopy,recvlen,addr,curtime,rtp,GetMemoryManager());
+				pack = RTPNew(GetMemoryManager(),RTPMEM_TYPE_CLASS_RTPRAWPACKET) RTPRawPacket(datacopy,(size_t)recvlen,addr,curtime,rtp,GetMemoryManager());
 				if (pack == 0)
 				{
 					RTPDelete(addr,GetMemoryManager());
