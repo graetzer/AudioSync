@@ -21,6 +21,7 @@
 class AudioStreamSession : public jrtplib::RTPSession {
 public:
     virtual ~AudioStreamSession() {
+        log("Deallocating AudioStream");
         if (format) AMediaFormat_delete(format);
     }
     virtual void Stop() {

@@ -89,13 +89,15 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
     off_t outStart, fileSize;
     int fd = AAsset_openFileDescriptor(asset, &outStart, &fileSize);
     assert(0 <= fd);
-    AAsset_close(asset);
 
+    debugLog("Audio file offset: %ld, size: %ld", outStart, fileSize);
     AMediaExtractor *extr = decoder_createExtractor(fd, outStart, fileSize);
     audioSession = audiostream_startStreaming((uint16_t)portbase, extr);//*/
 
-    /*debugLog("%s size: %ld %ld", path, (long)fileSize, (long)outStart);
-    struct decoder_audio audio = decoder_decodeFile(fd, outStart, fileSize);
+    AAsset_close(asset);
+
+    /*struct decoder_audio audio = decoder_decodeFile(fd, outStart, fileSize);
+    debugLog("Decoded size %ld", (long) audio.pcmLength);
     if (audio.pcmLength > 0)
         audioplayer_startPlayback(audio.pcm, (size_t)audio.pcmLength, audio.sampleRate, audio.numChannels);
     else

@@ -70,6 +70,7 @@ public class NsdHelper {
                     Log.d(TAG, "Same machine: " + mServiceName);
                 }
                 else if (service.getServiceName().contains(mServiceName)){
+                    // TODO this throws an exception if called twice shortly one after another
                     mNsdManager.resolveService(service, mResolveListener);
                 }
             }

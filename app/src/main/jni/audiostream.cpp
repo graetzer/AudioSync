@@ -77,10 +77,11 @@ public:
             log("No datasource");
             return;
         }
-        if (format == NULL) {
+        /*if (format == NULL) {
             int idx = AMediaExtractor_getSampleTrackIndex(extractor);// If this returns -1, we crash
             format = AMediaExtractor_getTrackFormat(extractor, (size_t)idx);
-        }
+            debugLog("")
+        }*/
 
         int status = 0;
         while (connectedSources == 0 && isRunning) {
@@ -98,26 +99,32 @@ public:
         int64_t lastTime = -1;
         while (written >= 0 && isRunning) {
             int64_t time = 0;
-            uint8_t buffer[1024];
+            uint8_t buffer[4096];
             written = decoder_extractData(extractor, buffer, sizeof(buffer), &time);
             if (lastTime == -1) lastTime = time;
             uint32_t timestampinc = (uint32_t) (time - lastTime);// Assuming it will fit
             lastTime = time;
 
-            if (written < 0) {
+            if (written >= 0) {
+                if (written > 1024) {
+                    debugLog("This package is too large %ld, TODO: split it up", (long) written);
+                    // TODO these UDP packages are definitely too large and result in IP fragmentation
+                    // most MTU's will be 1500, we should split them at 1024
+                }
+                status = SendPacket(buffer , (size_t) written, 0, false, timestampinc);
+            } else {
                 buffer[0] = '\0';
                 status = SendPacket(buffer, 1, 0, true, timestampinc);
-                log("Sender: End of stream");
-            } else {
-                status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
-                //log("Sending package for %.2fs", time / 1000.0);
+                log("Sender: End of stream. %ld", time);
             }
             _checkerror(status);
 
             // Don't decrease the waiting time too much, it seems sending a great number
             // of packets very fast, will cause the network (or the client) to drop a high
             // number of these packets. In any case the client needs to mitigate this.
-            RTPTime::Wait(RTPTime(0, 1000));// Wait 1000us
+            // TODO auto-adjust this value based on lost packets
+            // TODO figure out how to utilize throughput
+            RTPTime::Wait(RTPTime(0, 2000));// Wait 2000us
 
 
             // Not really necessary, we are not using this
@@ -138,6 +145,13 @@ public:
             status = Poll();
             _checkerror(status);
 #endif // RTP_SUPPORT_THREAD
+        }
+
+        if (GotoFirstSource()) {
+            do {
+                int32_t lost = GetCurrentSourceInfo()->RR_GetPacketsLost();
+                debugLog("Source lost %d packets", lost);
+            } while(GotoNextSource());
         }
 
         log("I'm done sending");
@@ -252,9 +266,11 @@ AudioStreamSession *audiostream_startStreaming(uint16_t portbase,
     // put the timestamp unit to (1.0/10.0)
     sessparams.SetOwnTimestampUnit(TIMESTAMP_UNITS);
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
+    //sessparams.SetAcceptOwnPackets(false);
     transparams.SetPortbase(portbase);
     int status = sess->Create(sessparams, &transparams);
     _checkerror(status);
+
     sess->SetDefaultMark(false);
     sess->extractor = extractor;
     pthread_create(&(sess->networkThread), NULL, &(_runSendThread), sess);
@@ -291,7 +307,7 @@ public:
             return;
         }
 
-        size_t pcmLength = 1024 * 1024, pcmOffset = 0;
+        size_t pcmLength = 1024 * 1024 * 4, pcmOffset = 0;
         uint8_t *pcmBuffer = (uint8_t *) malloc(pcmLength);
 
         // Start decoder
@@ -300,8 +316,10 @@ public:
 
         bool hasInput = true;
         bool hasOutput = true;
-        int32_t first = -1;
-        int16_t sequence = 0;
+        int32_t beginTimestamp = -1;
+        uint16_t lastSeqNum = 0;
+        int32_t lastTimestamp = 0;
+
         while (hasInput && isRunning) {
 
             BeginDataAccess();
@@ -311,29 +329,35 @@ public:
                     RTPPacket *pack;
                     while ((pack = GetNextPacket()) != NULL) {
 
-                        // Calculate playback time,
-                        uint32_t timestamp = pack->GetTimestamp();
+                        // Calculate playback time, do some lost package corrections
+                        uint32_t time = pack->GetTimestamp();
                         // record first timestamp and use differences
-                        if (first == -1) {
-                            first = timestamp;
-                            sequence = pack->GetSequenceNumber();
+                        if (beginTimestamp == -1) {
+                            beginTimestamp = time;
+                            lastSeqNum = pack->GetSequenceNumber() - (uint16_t)1;
                         }
-                        timestamp -= first;
-                        if (pack->GetSequenceNumber() != sequence+1) {
-                            log("Sequence number jumped from %u to %u - %.2fs. Flushing codec", sequence, pack->GetSequenceNumber(), timestamp / 1000.0);
+                        time -= beginTimestamp;
+                        if (pack->GetSequenceNumber() != lastSeqNum+1) {
+                            log("Packets jumped from %u to %u - %.2fs", lastSeqNum, pack->GetSequenceNumber(), time / 1000000.0);
+                            if (time - lastTimestamp > 10) {
+                                debugLog("Flushing codec");
+                                AMediaCodec_flush(codec);// If data is not adjacent, we need to flush the codec
+                            }
                         }
-                        sequence = pack->GetSequenceNumber();
+                        lastSeqNum = pack->GetSequenceNumber();
+                        lastTimestamp = time;
 
                         hasInput = !pack->HasMarker();// We repurposed this as end of file
                         if (hasInput) {
+                            //debugLog("Received %.2f", time / 1000000.0);
                             uint8_t *payload = pack->GetPayloadData();
                             size_t length = pack->GetPayloadLength();
-                            status = decoder_enqueueBuffer(codec, payload, length, (int64_t) timestamp);
+                            status = decoder_enqueueBuffer(codec, payload, length, (int64_t) time);
                             if (status != AMEDIA_OK) hasInput = false;
-                        } else if (timestamp > 0) {
+                        } else {
                             log("Receiver: End of file");
                             // Tell the codec we are done
-                            decoder_enqueueBuffer(codec, NULL, -1, (int64_t) timestamp);
+                            decoder_enqueueBuffer(codec, NULL, -1, (int64_t) time);
                         }
                         hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength,  &pcmOffset);
                         DeletePacket(pack);
@@ -351,17 +375,17 @@ public:
 
         BYEDestroy(RTPTime(1, 0), 0, 0);
 
-        log("Received all data");
+        log("Received all data.");
         while (hasOutput && status == AMEDIA_OK && isRunning) {
             hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength, &pcmOffset);
         }
         AMediaCodec_stop(codec);
-        log("Finished decoding, starting playing");
+        log("Finished decoding %d bytes, starting playing", pcmOffset);
 
         if (pcmOffset > 0) {
             int32_t samples = 44100, channels = 1;
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &samples);
-            AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
+            //AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &samples);
+            //AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
             audioplayer_startPlayback(pcmBuffer, pcmOffset, samples, channels);
         }
     }

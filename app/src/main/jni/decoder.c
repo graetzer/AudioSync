@@ -129,7 +129,7 @@ struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t fileSize
         const char *mime_type;
         bool success = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
         if (success && startsWith("audio/", mime_type)) {// We got a winner
-            debugLog("Input format %s", AMediaFormat_toString(format));
+            debugLog("Audio file format %s", AMediaFormat_toString(format));
 
             status = AMediaExtractor_selectTrack(extractor, idx);
             if(status != AMEDIA_OK) break;
@@ -146,6 +146,10 @@ struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t fileSize
     return result;
 }
 
+
+
+
+
 AMediaExtractor* decoder_createExtractor(int fd, off64_t offset, off64_t fileSize) {
 
     AMediaExtractor *extractor = AMediaExtractor_new();
@@ -157,12 +161,13 @@ AMediaExtractor* decoder_createExtractor(int fd, off64_t offset, off64_t fileSiz
 
     // Find the audio track
     size_t tracks = AMediaExtractor_getTrackCount(extractor);
+    debugLog("Audio file has %u tracks", (unsigned int)tracks);
     for (size_t idx = 0; idx < tracks; idx++) {
         AMediaFormat *format = AMediaExtractor_getTrackFormat(extractor, idx);
         const char *mime_type;
         bool success = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
         if (success && startsWith("audio/", mime_type)) {// We got a winner
-            debugLog("Input format %s", AMediaFormat_toString(format));
+            debugLog("Audio file format: %s", AMediaFormat_toString(format));
             status = AMediaExtractor_selectTrack(extractor, idx);
             if(status != AMEDIA_OK) return NULL;
 

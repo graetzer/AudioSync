@@ -31,8 +31,8 @@ public class AudioCore {
     }
 
     public void startPlaying(int portbase) {
-        //startStreaming(mAssetManager, "background.mp3");
-        startStreaming(portbase, mAssetManager, "mandelsson.mp3");
+        startStreaming(portbase, mAssetManager, "background.mp3");
+        //startStreaming(portbase, mAssetManager, "mandelsson.mp3");
         /*Thread t = new Thread() {
             @Override
             public void run() {
