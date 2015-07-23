@@ -190,51 +190,50 @@ int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize,
     ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, 5000);
     if (bufIdx >= 0) {
         size_t capacity;
-        uint8_t *buffer = AMediaCodec_getInputBuffer(codec, bufIdx, &capacity);
+        uint8_t *buffer = AMediaCodec_getInputBuffer(codec, (size_t)bufIdx, &capacity);
         int status;
         if (inSize < 0) {
             debugLog("input EOS");
-            status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, 0, time, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+            status = AMediaCodec_queueInputBuffer(codec, (size_t)bufIdx, 0, 0, (uint64_t)time, AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
         } else {
             if (capacity < inSize) {
+                debugLog("Capacity is too low, I need to break it up");
                 memcpy(buffer, inBuffer, capacity);
-                status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, capacity, time, 0);
+                status = AMediaCodec_queueInputBuffer(codec, (size_t)bufIdx, 0,
+                                                      capacity, (uint64_t)time, 0);
                 if(status != AMEDIA_OK) return status;
+                // Recursevly call this until we are done
                 status = decoder_enqueueBuffer(codec, buffer + capacity, inSize - capacity, time);
             } else {
                 memcpy(buffer, inBuffer, (size_t)inSize);
-                status = AMediaCodec_queueInputBuffer(codec, bufIdx, 0, inSize, time, 0);
+                status = AMediaCodec_queueInputBuffer(codec, (size_t)bufIdx, 0,
+                                                      (uint64_t)inSize, (uint64_t)time, 0);
             }
         }
         if(status != AMEDIA_OK) return status;
+    } else {
+        debugLog("Error, could not dequeueInputBuffer");
     }
     return AMEDIA_OK;
 }
 
-bool decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, size_t *pcmSize, size_t *pcmOffset) {
-    AMediaFormat *format = NULL;
-    AMediaCodecBufferInfo info;
-    ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);
-    if (bufIdx >= 0) {
-
-        uint8_t *buffer = AMediaCodec_getOutputBuffer(codec, (size_t)bufIdx, NULL);
-        // In case our out buffer is too small, make it bigger
-        if (*pcmSize < *pcmOffset + info.size) {
-            *pcmSize += info.size + 512*256;
-            *pcmBuffer = (uint8_t*) realloc(*pcmBuffer, *pcmSize);
-            debugLog("Reallocating");
-        }
-
-        memcpy(*pcmBuffer + *pcmOffset, buffer + info.offset, (size_t)info.size);
-        *pcmOffset += info.size;
-
-        int status = AMediaCodec_releaseOutputBuffer(codec, (size_t)bufIdx, false);
-        if(status != AMEDIA_OK) return false;
-    } else if (bufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
-        if (format != NULL) AMediaFormat_delete(format);
-        format = AMediaCodec_getOutputFormat(codec);
-        debugLog("Output format changed to: %s", AMediaFormat_toString(format));
+AMediaCodecBufferInfo decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, ssize_t *outIdx) {
+    AMediaCodecBufferInfo info = {0};
+    if (*outIdx >= 0) {
+        int status = AMediaCodec_releaseOutputBuffer(codec, (size_t)*outIdx, false);
+        if(status != AMEDIA_OK) return info;
+        *outIdx = -1;
     }
 
-    return (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM;
+    ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);
+    if (bufIdx >= 0) {
+        debugLog("getOutputBuffer %d", info.size);
+        *pcmBuffer = AMediaCodec_getOutputBuffer(codec, (size_t)bufIdx, NULL);
+        *outIdx = bufIdx;
+    } else if (bufIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+        AMediaFormat *format = AMediaCodec_getOutputFormat(codec);
+        debugLog("Output format changed to: %s", AMediaFormat_toString(format));
+        AMediaFormat_delete(format);
+    }
+    return info;
 }

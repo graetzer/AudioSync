@@ -53,7 +53,8 @@ protected:
 
 // Initializer functions
 AudioStreamSession *audiostream_startStreaming(uint16_t portbase, AMediaExtractor *extractor);
-// TODO interrupted callback
+
 AudioStreamSession * audiostream_startReceiving(const char *host, uint16_t portbase);
+// TODO An error callback would be nice
 
 #endif

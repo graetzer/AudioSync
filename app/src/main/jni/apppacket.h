@@ -23,7 +23,7 @@ extern "C" {
 
 
 // Packettype should be indicated through the subtype in the RC field
-extern const uint8_t *audiostream_app_name;
+#define AUDIOSTREAM_APP_NAME ((const uint8_t*)"ADST")
 
 #define AUDIOSTREAM_PACKET_MEDIAFORMAT 1
 // Try to parse the string returned from AMediaFormat_toString and use all the parameters

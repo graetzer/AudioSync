@@ -10,14 +10,14 @@
  * of the License.
  */
 
-#include "audioplayer.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
-//#include <android/media/audio_utils/fifo.h>
-
 #include <android/log.h>
+
+#include "audioplayer.h"
+#include "audioutils/fifo.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
 
@@ -30,91 +30,113 @@ static SLEngineItf engineEngine;
 static SLObjectItf outputMixObject = NULL;
 
 // buffer queue player interfaces
-static SLObjectItf bqPlayerObject = NULL;
-static SLPlayItf bqPlayerPlay;
-static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
-//static SLEffectSendItf bqPlayerEffectSend;
-static SLVolumeItf bqPlayerVolume;
+static SLObjectItf playerObject = NULL;
+static SLPlayItf playerPlay;
+static SLAndroidSimpleBufferQueueItf playerBufferQueue;
+static SLAndroidSimpleBufferQueueState playerBufferQueueState;
+static SLVolumeItf playerVolume;
 
-// Parameters for playback
-static int32_t global_samplesPerSec;
-static int32_t global_framesPerBuffers;
+// Device parameters for playback
+static uint32_t global_samplesPerSec;
+static uint32_t global_framesPerBuffers;
+// Parameters for current song
+uint32_t current_samplesPerSec = 44100;
+uint32_t current_numChannels = 1;
 
-/*
+// Current audio data queue
+static struct audio_utils_fifo fifo;
+static void *fifoBuffer = NULL;
 
+//Temporary buffer for the audio buffer queue.
+// 4096 equals 1024 frames with 2 channels with 16bit PCM format
 #define N_BUFFERS 4
-#define MAX_BUFFER_SIZE 4096
- int16_t temp_buffer[MAX_BUFFER_SIZE * N_BUFFERS];
- uint16_t *sample_fifo_buffer=0;*/
+#define MAX_BUFFER_SIZE 8192
+uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
+uint32_t tempBuffers_ix = 0;
 
-// Current data to play
-static SLuint32 temp_buffer_ix = 0;
-// Number of pages
-static uint8_t *temp_buffer;
-static size_t temp_buffer_size;
-static uint32_t temp_buffer_numChannels = 1;
+// =================== Helpers ===================
+static const char* _descriptionForResult(SLresult result) {
+    switch (result) {
+        case SL_RESULT_SUCCESS: return "SUCCESS";
+        case SL_RESULT_PRECONDITIONS_VIOLATED: return "PRECONDITIONS_VIOLATED";
+        case SL_RESULT_PARAMETER_INVALID: return "PARAMETER_INVALID";
+        case SL_RESULT_MEMORY_FAILURE: return "MEMORY_FAILURE";
+        case SL_RESULT_RESOURCE_ERROR: return "RESOURCE_ERROR";
+        case SL_RESULT_RESOURCE_LOST: return "RESOURCE_LOST";
+        case SL_RESULT_IO_ERROR: return "IO_ERROR";
+        case SL_RESULT_BUFFER_INSUFFICIENT: return "BUFFER_INSUFFICIENT";
+        case SL_RESULT_CONTENT_CORRUPTED: return "CONTENT_CORRUPTED";
+        case SL_RESULT_CONTENT_UNSUPPORTED: return "CONTENT_UNSUPPORTED";
+        case SL_RESULT_CONTENT_NOT_FOUND: return "CONTENT_NOT_FOUND";
+        case SL_RESULT_PERMISSION_DENIED: return "PERMISSION_DENIED";
+        case SL_RESULT_FEATURE_UNSUPPORTED: return "FEATURE_UNSUPPORTED";
+        case SL_RESULT_INTERNAL_ERROR: return "INTERNAL_ERROR";
+        case SL_RESULT_OPERATION_ABORTED: return "OPERATION_ABORTED";
+        case SL_RESULT_CONTROL_LOST: return "CONTROL_LOST";
+        default: return "Unknown error code";
+    }
+}
+
+#define _checkerror(result) _checkerror_internal(result, __FUNCTION__)
+
+static void _checkerror_internal(SLresult result, const char *f) {
+    if (SL_RESULT_SUCCESS != result) {
+        debugLog("%s - OpenSL ES error: %s", f, _descriptionForResult(result));
+        // TODO figure which errors to treat as fatal
+        if (result != SL_RESULT_BUFFER_INSUFFICIENT) {
+            exit(-1);
+        }
+    }
+}
+
+// =================== Setup OpenSL objects ===================
 
 // create the engine and output mix objects
 static void _createEngine() {
     // create engine
     SLresult result = slCreateEngine(&engineObject, 0, NULL, 0, NULL, NULL);
-    assert(SL_RESULT_SUCCESS == result);
+    _checkerror(result);
 
     // realize the engine
     result = (*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
+    _checkerror(result);
 
     // get the engine interface, which is needed in order to create other objects
     result = (*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &engineEngine);
-    assert(SL_RESULT_SUCCESS == result);
+    _checkerror(result);
 
     // create output mix, with environmental reverb specified as a non-required interface
     const SLInterfaceID ids[1] = {SL_IID_ENVIRONMENTALREVERB};
     const SLboolean req[1] = {SL_BOOLEAN_FALSE};
     result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 1, ids, req);
-    assert(SL_RESULT_SUCCESS == result);
+    _checkerror(result);
     (void) result;
 
     // realize the output mix
     result = (*outputMixObject)->Realize(outputMixObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
+    _checkerror(result);
 }
 
 // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
-    if (temp_buffer == NULL) return;
+    if (fifoBuffer == NULL || bq != playerBufferQueue) return;
 
     // Assuming PCM 16
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
-    SLuint32 size = global_framesPerBuffers * temp_buffer_numChannels;
-    SLuint32 offset = size * temp_buffer_ix;
 
-    if (offset < temp_buffer_size) {
-        if (offset + size > temp_buffer_size) {// if there isn't enough left, cancel
-            size = (SLuint32)temp_buffer_size - offset;
-        }
-
-        SLresult result = (*bq)->Enqueue(bq, temp_buffer + offset, size);
-        if (result != SL_RESULT_SUCCESS) {
-            // the most likely other result is SL_RESULT_BUFFER_INSUFFICIENT,
-            // which for this code example would indicate a programming error
-            debugLog("Error enqueuing buffer %u", (unsigned int) result);
-        }
-        temp_buffer_ix++;
-    } else {
-        temp_buffer_ix = 0;// Just loop it,
-        int8_t empty[1] = {0};// If we don't enqueue something it dies of starvation
-        (*bq)->Enqueue(bqPlayerBufferQueue, &empty, 1);
-    }//*/
-
-    /*int16_t *buf_ptr = temp_buffer + global_bufsize * temp_buffer_ix;
-
-    ssize_t frameCount = audio_utils_fifo_read(sample_fifo, buf_ptr, global_bufsize);
+    // global_framesPerBuffers is the max amount of frames we read
+    size_t frameSize = current_numChannels * sizeof(uint16_t); // 16 bit PCM data
+    size_t framesPerBuffer = global_framesPerBuffers * frameSize;
+    uint8_t *buf_ptr = tempBuffers + framesPerBuffer * tempBuffers_ix;
+    ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
     if (frameCount > 0) {
-    SLresult result = (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, buf_ptr, frameCount * 2);
-        assert(SL_RESULT_SUCCESS == result);
-        temp_buffer_ix = (temp_buffer_ix + 1) % N_BUFFERS;
-    }*/
+        size_t frameCountSize = frameCount * frameSize;
+        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32)frameCountSize);
+        _checkerror(result);
+        tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
+    } else {
+        debugLog("_bqPlayerCallback: Audio fifo is empty");
+    }
 }
 
 // create buffer queue audio player
@@ -148,101 +170,122 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
     // create audio player
     const SLInterfaceID ids[2] = {SL_IID_BUFFERQUEUE, SL_IID_VOLUME};
     const SLboolean req[2] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE};
-    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &bqPlayerObject, &audioSrc, &audioSnk,
+    result = (*engineEngine)->CreateAudioPlayer(engineEngine, &playerObject, &audioSrc, &audioSnk,
                                                 2, ids, req);
-    assert(SL_RESULT_SUCCESS == result);
+    _checkerror(result);
 
     // realize the player
-    result = (*bqPlayerObject)->Realize(bqPlayerObject, SL_BOOLEAN_FALSE);
-    assert(SL_RESULT_SUCCESS == result);
+    result = (*playerObject)->Realize(playerObject, SL_BOOLEAN_FALSE);
+    _checkerror(result);
 
     // get the play interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_PLAY, &bqPlayerPlay);
-    assert(SL_RESULT_SUCCESS == result);
+    result = (*playerObject)->GetInterface(playerObject, SL_IID_PLAY, &playerPlay);
+    _checkerror(result);
 
     // get the buffer queue interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_BUFFERQUEUE,
-                                             &bqPlayerBufferQueue);
-    assert(SL_RESULT_SUCCESS == result);
+    result = (*playerObject)->GetInterface(playerObject, SL_IID_BUFFERQUEUE,
+                                             &playerBufferQueue);
+    _checkerror(result);
+
+    result = (*playerBufferQueue)->GetState(playerBufferQueue, &playerBufferQueueState);
+    _checkerror(result);
 
     // register callback on the buffer queue
-    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, _bqPlayerCallback, NULL);
-    assert(SL_RESULT_SUCCESS == result);
+    result = (*playerBufferQueue)->RegisterCallback(playerBufferQueue, _bqPlayerCallback, NULL);
+    _checkerror(result);
 
     // get the volume interface
-    result = (*bqPlayerObject)->GetInterface(bqPlayerObject, SL_IID_VOLUME, &bqPlayerVolume);
-    assert(SL_RESULT_SUCCESS == result);
+    result = (*playerObject)->GetInterface(playerObject, SL_IID_VOLUME, &playerVolume);
+    _checkerror(result);
 }
 
 void _cleanupBufferQueueAudioPlayer() {
     // destroy buffer queue audio player object, and invalidate all associated interfaces
-    if (bqPlayerObject != NULL) {
-        (*bqPlayerObject)->Destroy(bqPlayerObject);
-        bqPlayerObject = NULL;
-        bqPlayerPlay = NULL;
-        bqPlayerBufferQueue = NULL;
+    if (playerObject != NULL) {
+        (*playerObject)->Destroy(playerObject);
+        playerObject = NULL;
+        playerPlay = NULL;
+        playerBufferQueue = NULL;
         //bqPlayerEffectSend = NULL;
-        bqPlayerVolume = NULL;
+        playerVolume = NULL;
     }
 }
 
-void audioplayer_init(int32_t samplesPerSec, int32_t framesPerBuffer) {
+// =================== Public API calls ===================
+
+void audioplayer_initGlobal(uint32_t samplesPerSec, uint32_t framesPerBuffer) {
     debugLog("Device Buffer Size: %d ;  Sample Rate: %d", framesPerBuffer, samplesPerSec);
     global_samplesPerSec = samplesPerSec;
     global_framesPerBuffers = framesPerBuffer;
+
+    if(framesPerBuffer > MAX_BUFFER_SIZE) {
+        debugLog("ATTENTION: Global buffersize is bigger than MAX_BUFFER_SIZE");
+    }
 
     _createEngine();
     debugLog("Initialized AudioPlayer");
 }
 
-void audioplayer_startPlayback(uint8_t *buffer, size_t bufferSize, uint32_t samplesPerSec,
-                               uint32_t numChannels) {
-    debugLog("%s(0x..., %ld, %d, %d)", __FUNCTION__, (long) bufferSize, samplesPerSec, numChannels);
-    // TODO put the init code somewhere else
-    // 2 bytes per sample
-    //sample_fifo_buffer = calloc(global_bufsize, sizeof(uint16_t));
-    //assert(sample_fifo_buffer);
-    //audio_utils_fifo_init(&sample_fifo, global_bufsize, 2, sample_fifo_buffer);
-
-    temp_buffer = buffer;
-    temp_buffer_size = bufferSize;
-    temp_buffer_numChannels = numChannels;
-    temp_buffer_ix = 0;
-    if (global_samplesPerSec != samplesPerSec) {
-        debugLog("Global:%d != Local: %d", global_samplesPerSec, samplesPerSec);
+void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
+    debugLog("Initialize the audio output");
+    debugLog("Audio Sample Rate: %u; Channels: %u", samplesPerSec, numChannels);
+    
+    current_samplesPerSec = samplesPerSec;
+    current_numChannels = numChannels;
+    // TODO maybe resample, figure out if correct. 
+    // https://android.googlesource.com/platform/system/media/+/master/audio_utils/resampler.c
+    _createBufferQueueAudioPlayer(current_samplesPerSec, current_numChannels);
+    if (global_samplesPerSec != current_samplesPerSec) {
+        // Will result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
+        debugLog("Global:%d != Current: %d", global_samplesPerSec, current_samplesPerSec);
     }
-    // TODO maybe resample instead
-    global_samplesPerSec = samplesPerSec;
-    _createBufferQueueAudioPlayer(global_samplesPerSec, numChannels);
 
-    if (temp_buffer != NULL && bufferSize > 0) {
-        // set the player's state to playing
-        SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-        assert(SL_RESULT_SUCCESS == result);
-        debugLog("Started playback");
+    // Initialize the audio buffer queue
+    // TODO figure out how to buffer more data without putting it here? alternatively realloc buffer
+    size_t frameCount = current_samplesPerSec * 60 * 5;// 5 minutes buffer
+    size_t frameSize = current_numChannels * sizeof(uint16_t);
+    if (fifoBuffer != NULL) free(fifoBuffer);
+    fifoBuffer = malloc(frameCount * frameSize);
+    if (fifoBuffer == NULL) debugLog("Fuck");
+    audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
 
-        // We must enqueue something, otherwise it pauses and never calls the callbacks
-        _bqPlayerCallback(bqPlayerBufferQueue, NULL);
-        //int8_t empty[1] = {0};
-        //(*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, &empty, 1);
+
+    SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
+    _checkerror(result);
+    debugLog("Initialized playback");
+}
+
+ssize_t audioplayer_enqueuPCMFrames(uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTime) {
+    size_t frameSize = current_numChannels * sizeof(uint16_t);
+    size_t frames = pcmSize / frameSize;// This should always fit, as MediaCodec uses 16 bit PCM
+    ssize_t written = audio_utils_fifo_write(&fifo, pcmBuffer, frames);
+
+    if (playerBufferQueueState.count == 0 && written > 0) {
+        debugLog("initial enqueue, buffer was empty. Gonna enqueue zeros to kickstart playback");
+        const char zero = '\0';
+        SLresult result = (*playerBufferQueue)->Enqueue(playerBufferQueue, &zero, sizeof(zero));
+        _checkerror(result);
+    } else {
+        debugLog("Audio fifo is full and no data in the audio buffer queue?!!");
     }
+    return written;
 }
 
 void audioplayer_stopPlayback() {
-    if (bqPlayerPlay) {
-        SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_STOPPED);
-        assert(SL_RESULT_SUCCESS == result);
+    if (playerPlay) {
+        SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_STOPPED);
+        _checkerror(result);
         debugLog("Stopped playback");
     }
 
     // Cleanup audioplayer so we can use different parameters
     _cleanupBufferQueueAudioPlayer();
 
-    uint8_t *buffer = temp_buffer;
-    temp_buffer = NULL;
-    if (buffer != NULL) free(buffer);
+    //uint8_t *buffer = temp_buffer;
+    //temp_buffer = NULL;
+    //if (buffer != NULL) free(buffer);
 
-    //audio_utils_fifo_deinit(&sample_fifo);
+    audio_utils_fifo_deinit(&fifo);
     //free(sample_fifo_buffer);
 }
 
@@ -260,5 +303,10 @@ void audioplayer_cleanup() {
         (*engineObject)->Destroy(engineObject);
         engineObject = NULL;
         engineEngine = NULL;
+    }
+    // free the buffer if it was allocated
+    if (fifoBuffer != NULL) {
+        free(fifoBuffer);
+        fifoBuffer = NULL;
     }
 }

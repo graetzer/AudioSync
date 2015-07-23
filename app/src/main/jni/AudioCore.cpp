@@ -43,7 +43,7 @@ AudioStreamSession *audioSession;
  * Signature: (II)V
  */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio (JNIEnv *env, jobject thiz, jint samplesPerSec, jint framesPerBuffer) {
-    audioplayer_init(samplesPerSec, framesPerBuffer);
+    audioplayer_initGlobal((uint32_t)samplesPerSec, (uint32_t)framesPerBuffer);
 
 #ifdef RTP_SUPPORT_THREAD
     // Workaround to kill threads since pthread_cancel is not supported

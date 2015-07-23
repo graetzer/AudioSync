@@ -33,8 +33,15 @@ struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t length);
 
 AMediaExtractor* decoder_createExtractor(int fd, off64_t offset, off64_t fileSize);
 ssize_t decoder_extractData(AMediaExtractor* extractor, uint8_t *buffer, size_t capacity, int64_t *time);
+
 int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize, int64_t time);
-bool decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, size_t *pcmSize, size_t *pcmOffset);
+/*
+ * Dequeue a buffer from the codec
+ * @param  outIdx  the index of the buffer which was dequeued, pass in the pointer to the index
+ *         of the previous call. On the first call pass a pointer to a var with content (-1)
+ * @return  The info struct for the dequeued buffer
+ */
+AMediaCodecBufferInfo decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, ssize_t *outIdx);
 
 #ifdef __cplusplus
 }

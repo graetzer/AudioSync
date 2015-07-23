@@ -111,7 +111,7 @@ public:
                     // TODO these UDP packages are definitely too large and result in IP fragmentation
                     // most MTU's will be 1500, we should split them at 1024
                 }
-                status = SendPacket(buffer , (size_t) written, 0, false, timestampinc);
+                status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
             } else {
                 buffer[0] = '\0';
                 status = SendPacket(buffer, 1, 0, true, timestampinc);
@@ -128,8 +128,8 @@ public:
 
 
             // Not really necessary, we are not using this
-            BeginDataAccess();
-            // check incoming packets TODO use example4.cpp to add destinations
+            /*BeginDataAccess();
+            // check incoming packets
             if (GotoFirstSourceWithData()) {
                 do {
                     RTPPacket *pack;
@@ -139,7 +139,7 @@ public:
                     }
                 } while (GotoNextSourceWithData());
             }
-            EndDataAccess();
+            EndDataAccess();*/
 // Without threads we have to do that for ourselves
 #ifndef RTP_SUPPORT_THREAD
             status = Poll();
@@ -151,7 +151,7 @@ public:
             do {
                 int32_t lost = GetCurrentSourceInfo()->RR_GetPacketsLost();
                 debugLog("Source lost %d packets", lost);
-            } while(GotoNextSource());
+            } while (GotoNextSource());
         }
 
         log("I'm done sending");
@@ -191,8 +191,8 @@ protected:
 
             if (this->format) {
                 const char *formatString = AMediaFormat_toString(format);
-                SendRTCPAPPPacket(AUDIOSTREAM_PACKET_MEDIAFORMAT, audiostream_app_name,
-                                  (uint8_t *) formatString, strlen(formatString));
+                SendRTCPAPPPacket(AUDIOSTREAM_PACKET_MEDIAFORMAT, AUDIOSTREAM_APP_NAME,
+                                  (const uint8_t *) formatString, strlen(formatString));
             }
         }
     }
@@ -281,6 +281,8 @@ AudioStreamSession *audiostream_startStreaming(uint16_t portbase,
     return sess;
 }
 
+#define MAX_BUFFER_SIZE 8192
+
 class ReceiverSession : public AudioStreamSession {
 public:
     ~ReceiverSession() {
@@ -307,47 +309,56 @@ public:
             return;
         }
 
-        size_t pcmLength = 1024 * 1024 * 4, pcmOffset = 0;
-        uint8_t *pcmBuffer = (uint8_t *) malloc(pcmLength);
-
         // Start decoder
         status = AMediaCodec_start(codec);
         if (status != AMEDIA_OK) return;
+        debugLog("Started decoder");
 
-        bool hasInput = true;
-        bool hasOutput = true;
-        int32_t beginTimestamp = -1;
+        // Extracting format data
+        int32_t samples = 44100, channels = 1;
+        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &samples);
+        AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
+        audioplayer_initPlayback((uint32_t)samples, (uint32_t)channels);
+        uint8_t *pcmBuffer;// Will contain pointer to decoder buffer
+
+
+        bool hasInput = true, hasOutput = true;
+        int32_t beginTimestamp = -1, lastTimestamp = 0;
         uint16_t lastSeqNum = 0;
-        int32_t lastTimestamp = 0;
-
+        ssize_t lastBufferIdx = -1;
         while (hasInput && isRunning) {
 
             BeginDataAccess();
-            // check incoming packets
             if (GotoFirstSourceWithData()) {
                 do {
                     RTPPacket *pack;
                     while ((pack = GetNextPacket()) != NULL) {
 
-                        // Calculate playback time, do some lost package corrections
+                        // Calculate playback time and do some lost package corrections
                         uint32_t time = pack->GetTimestamp();
                         // record first timestamp and use differences
                         if (beginTimestamp == -1) {
                             beginTimestamp = time;
-                            lastSeqNum = pack->GetSequenceNumber() - (uint16_t)1;
+                            lastSeqNum = pack->GetSequenceNumber() - (uint16_t) 1;
                         }
                         time -= beginTimestamp;
-                        if (pack->GetSequenceNumber() != lastSeqNum+1) {
-                            log("Packets jumped from %u to %u - %.2fs", lastSeqNum, pack->GetSequenceNumber(), time / 1000000.0);
-                            if (time - lastTimestamp > 10) {
+                        // Handle lost packets, TODO does this work with multiple senders?
+                        if (pack->GetSequenceNumber() != lastSeqNum + 1) {
+                            log("Packets jumped %u => %u - %.2f => %.2fs", lastSeqNum,
+                                pack->GetSequenceNumber(), time / 1000000.0,
+                                lastTimestamp / 1000000.0);
+                            if (time - lastTimestamp > 500) {
+                                // If data is not adjacent, we need to flush the codec
                                 debugLog("Flushing codec");
-                                AMediaCodec_flush(codec);// If data is not adjacent, we need to flush the codec
+                                AMediaCodec_flush(codec);
                             }
                         }
                         lastSeqNum = pack->GetSequenceNumber();
                         lastTimestamp = time;
 
-                        hasInput = !pack->HasMarker();// We repurposed this as end of file
+
+                        // We repurposed the marker flag as end of file
+                        hasInput = !pack->HasMarker();
                         if (hasInput) {
                             //debugLog("Received %.2f", time / 1000000.0);
                             uint8_t *payload = pack->GetPayloadData();
@@ -359,7 +370,15 @@ public:
                             // Tell the codec we are done
                             decoder_enqueueBuffer(codec, NULL, -1, (int64_t) time);
                         }
-                        hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength,  &pcmOffset);
+
+                        AMediaCodecBufferInfo info = decoder_dequeueBuffer(codec, &pcmBuffer, &lastBufferIdx);
+                        hasOutput = !(info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+                        if(info.size > 0) {
+                            audioplayer_enqueuPCMFrames(pcmBuffer + info.offset,
+                                                        (size_t)info.size,
+                                                        info.presentationTimeUs);
+                        }
+
                         DeletePacket(pack);
                     }
                 } while (GotoNextSourceWithData());
@@ -371,23 +390,22 @@ public:
             status = sess.Poll();
             checkerror(status);
 #endif // RTP_SUPPORT_THREAD
+            RTPTime::Wait(RTPTime(0, 1000));// Wait 1000us
         }
-
+        log("Received all data, ending RTP session.");
         BYEDestroy(RTPTime(1, 0), 0, 0);
 
-        log("Received all data.");
         while (hasOutput && status == AMEDIA_OK && isRunning) {
-            hasOutput = decoder_dequeueBuffer(codec, &pcmBuffer, &pcmLength, &pcmOffset);
+            AMediaCodecBufferInfo info = decoder_dequeueBuffer(codec, &pcmBuffer, &lastBufferIdx);
+            hasOutput = !(info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+            if(info.size > 0) {
+                audioplayer_enqueuPCMFrames(pcmBuffer + info.offset,
+                                            (size_t)info.size,
+                                            info.presentationTimeUs);
+            }
         }
         AMediaCodec_stop(codec);
-        log("Finished decoding %d bytes, starting playing", pcmOffset);
-
-        if (pcmOffset > 0) {
-            int32_t samples = 44100, channels = 1;
-            //AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_SAMPLE_RATE, &samples);
-            //AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_CHANNEL_COUNT, &channels);
-            audioplayer_startPlayback(pcmBuffer, pcmOffset, samples, channels);
-        }
+        log("Finished decoding");
     }
 
     void SetFormat(AMediaFormat *newFormat) {
@@ -415,7 +433,7 @@ public:
 
     void SetClockOffset(struct timeval val) {
         audiostream_clockOffset off = {.offsetSeconds = val.tv_sec, .offetUSeconds = val.tv_usec};
-        this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCKOFFSET, audiostream_app_name, &off,
+        this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCKOFFSET, AUDIOSTREAM_APP_NAME, &off,
                                 sizeof(audiostream_clockOffset));
     }
 
@@ -435,6 +453,7 @@ protected:
                     log("Parsed format string %s", AMediaFormat_toString(newFormat));
                     AMediaFormat_delete(newFormat);
                     // TODO activate this again
+                    // TODO figure out how to compare formats and see if it's the same as the old
                     //SetFormat(newFormat);
                 }
             }
