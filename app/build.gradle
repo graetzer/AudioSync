@@ -27,10 +27,9 @@ model {
         stl = "gnustl_static" // supports atomics
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }
-    /*android.productFlavors {
-        create("all")
-
-    }*/
+    android.productFlavors {
+        create("armeabi")
+    }
 }
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])

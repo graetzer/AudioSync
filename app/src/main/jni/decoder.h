@@ -19,6 +19,9 @@ extern "C" {
 #include <media/NdkMediaExtractor.h>
 #include <media/NdkMediaCodec.h>
 
+/*
+ * Hold all decoded parameters
+ */
 struct decoder_audio {
     int32_t sampleRate, numChannels;
     ssize_t pcmLength;
@@ -26,22 +29,28 @@ struct decoder_audio {
 };
 
 /*
-
+ * Not needed currently, for testing playback only
 */
 struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t length);
 
+// ========================== Helper functions for streaming extracting ==========================
 
-AMediaExtractor* decoder_createExtractor(int fd, off64_t offset, off64_t fileSize);
-ssize_t decoder_extractData(AMediaExtractor* extractor, uint8_t *buffer, size_t capacity, int64_t *time);
+AMediaExtractor *decoder_createExtractor(int fd, off64_t offset, off64_t fileSize);
+
+ssize_t decoder_extractData(AMediaExtractor *extractor, uint8_t *buffer, size_t capacity,
+                            int64_t *time);
+
+// =========================== Helper functions for streaming decoding ===========================
 
 int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize, int64_t time);
 /*
  * Dequeue a buffer from the codec
- * @param  outIdx  the index of the buffer which was dequeued, pass in the pointer to the index
- *         of the previous call. On the first call pass a pointer to a var with content (-1)
- * @return  The info struct for the dequeued buffer
+ * @param  sinkFunc  the pcm data will be passed to this function pointer
+ * @return  true if there is still data coming, false if there is no more
  */
-AMediaCodecBufferInfo decoder_dequeueBuffer(AMediaCodec *codec, uint8_t **pcmBuffer, ssize_t *outIdx);
+bool decoder_dequeueBuffer(AMediaCodec *codec,
+                           void (*sinkFunc)(const uint8_t *pcmBuffer, size_t pcmSize,
+                                            int64_t playbackTime));
 
 #ifdef __cplusplus
 }

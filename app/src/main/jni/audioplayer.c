@@ -10,8 +10,10 @@
  * of the License.
  */
 
+
+#include <time.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <stdbool.h>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 #include <android/log.h>
@@ -33,7 +35,6 @@ static SLObjectItf outputMixObject = NULL;
 static SLObjectItf playerObject = NULL;
 static SLPlayItf playerPlay;
 static SLAndroidSimpleBufferQueueItf playerBufferQueue;
-static SLAndroidSimpleBufferQueueState playerBufferQueueState;
 static SLVolumeItf playerVolume;
 
 // Device parameters for playback
@@ -53,27 +54,46 @@ static void *fifoBuffer = NULL;
 #define MAX_BUFFER_SIZE 8192
 uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
 uint32_t tempBuffers_ix = 0;
+// TODO figure out a better way to indicate empty audio buffers
+static volatile bool _playerIsStarving = false;
 
 // =================== Helpers ===================
-static const char* _descriptionForResult(SLresult result) {
+static const char *_descriptionForResult(SLresult result) {
     switch (result) {
-        case SL_RESULT_SUCCESS: return "SUCCESS";
-        case SL_RESULT_PRECONDITIONS_VIOLATED: return "PRECONDITIONS_VIOLATED";
-        case SL_RESULT_PARAMETER_INVALID: return "PARAMETER_INVALID";
-        case SL_RESULT_MEMORY_FAILURE: return "MEMORY_FAILURE";
-        case SL_RESULT_RESOURCE_ERROR: return "RESOURCE_ERROR";
-        case SL_RESULT_RESOURCE_LOST: return "RESOURCE_LOST";
-        case SL_RESULT_IO_ERROR: return "IO_ERROR";
-        case SL_RESULT_BUFFER_INSUFFICIENT: return "BUFFER_INSUFFICIENT";
-        case SL_RESULT_CONTENT_CORRUPTED: return "CONTENT_CORRUPTED";
-        case SL_RESULT_CONTENT_UNSUPPORTED: return "CONTENT_UNSUPPORTED";
-        case SL_RESULT_CONTENT_NOT_FOUND: return "CONTENT_NOT_FOUND";
-        case SL_RESULT_PERMISSION_DENIED: return "PERMISSION_DENIED";
-        case SL_RESULT_FEATURE_UNSUPPORTED: return "FEATURE_UNSUPPORTED";
-        case SL_RESULT_INTERNAL_ERROR: return "INTERNAL_ERROR";
-        case SL_RESULT_OPERATION_ABORTED: return "OPERATION_ABORTED";
-        case SL_RESULT_CONTROL_LOST: return "CONTROL_LOST";
-        default: return "Unknown error code";
+        case SL_RESULT_SUCCESS:
+            return "SUCCESS";
+        case SL_RESULT_PRECONDITIONS_VIOLATED:
+            return "PRECONDITIONS_VIOLATED";
+        case SL_RESULT_PARAMETER_INVALID:
+            return "PARAMETER_INVALID";
+        case SL_RESULT_MEMORY_FAILURE:
+            return "MEMORY_FAILURE";
+        case SL_RESULT_RESOURCE_ERROR:
+            return "RESOURCE_ERROR";
+        case SL_RESULT_RESOURCE_LOST:
+            return "RESOURCE_LOST";
+        case SL_RESULT_IO_ERROR:
+            return "IO_ERROR";
+        case SL_RESULT_BUFFER_INSUFFICIENT:
+            return "BUFFER_INSUFFICIENT";
+        case SL_RESULT_CONTENT_CORRUPTED:
+            return "CONTENT_CORRUPTED";
+        case SL_RESULT_CONTENT_UNSUPPORTED:
+            return "CONTENT_UNSUPPORTED";
+        case SL_RESULT_CONTENT_NOT_FOUND:
+            return "CONTENT_NOT_FOUND";
+        case SL_RESULT_PERMISSION_DENIED:
+            return "PERMISSION_DENIED";
+        case SL_RESULT_FEATURE_UNSUPPORTED:
+            return "FEATURE_UNSUPPORTED";
+        case SL_RESULT_INTERNAL_ERROR:
+            return "INTERNAL_ERROR";
+        case SL_RESULT_OPERATION_ABORTED:
+            return "OPERATION_ABORTED";
+        case SL_RESULT_CONTROL_LOST:
+            return "CONTROL_LOST";
+        default:
+            return "Unknown error code";
     }
 }
 
@@ -130,12 +150,18 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     uint8_t *buf_ptr = tempBuffers + framesPerBuffer * tempBuffers_ix;
     ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
     if (frameCount > 0) {
-        size_t frameCountSize = frameCount * frameSize;
-        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32)frameCountSize);
-        _checkerror(result);
         tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
+
+        size_t frameCountSize = frameCount * frameSize;
+        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
+        _checkerror(result);
+        if (result == SL_RESULT_BUFFER_INSUFFICIENT) {
+            debugLog("Enqueue(%lu)", frameCountSize);
+        }
+        _playerIsStarving = false;
     } else {
-        debugLog("_bqPlayerCallback: Audio fifo is empty");
+        debugLog("_bqPlayerCallback: Audio FiFo is empty");
+        _playerIsStarving = true;
     }
 }
 
@@ -184,10 +210,7 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
 
     // get the buffer queue interface
     result = (*playerObject)->GetInterface(playerObject, SL_IID_BUFFERQUEUE,
-                                             &playerBufferQueue);
-    _checkerror(result);
-
-    result = (*playerBufferQueue)->GetState(playerBufferQueue, &playerBufferQueueState);
+                                           &playerBufferQueue);
     _checkerror(result);
 
     // register callback on the buffer queue
@@ -218,7 +241,7 @@ void audioplayer_initGlobal(uint32_t samplesPerSec, uint32_t framesPerBuffer) {
     global_samplesPerSec = samplesPerSec;
     global_framesPerBuffers = framesPerBuffer;
 
-    if(framesPerBuffer > MAX_BUFFER_SIZE) {
+    if (framesPerBuffer > MAX_BUFFER_SIZE) {
         debugLog("ATTENTION: Global buffersize is bigger than MAX_BUFFER_SIZE");
     }
 
@@ -227,48 +250,53 @@ void audioplayer_initGlobal(uint32_t samplesPerSec, uint32_t framesPerBuffer) {
 }
 
 void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
-    debugLog("Initialize the audio output");
     debugLog("Audio Sample Rate: %u; Channels: %u", samplesPerSec, numChannels);
-    
+
     current_samplesPerSec = samplesPerSec;
     current_numChannels = numChannels;
     // TODO maybe resample, figure out if correct. 
     // https://android.googlesource.com/platform/system/media/+/master/audio_utils/resampler.c
     _createBufferQueueAudioPlayer(current_samplesPerSec, current_numChannels);
     if (global_samplesPerSec != current_samplesPerSec) {
-        // Will result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
+        // Will probably result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
         debugLog("Global:%d != Current: %d", global_samplesPerSec, current_samplesPerSec);
     }
 
     // Initialize the audio buffer queue
-    // TODO figure out how to buffer more data without putting it here? alternatively realloc buffer
+    // TODO figure out how to buffer more data? (maybe realloc buffer) Currently: nanosleep
     size_t frameCount = current_samplesPerSec * 60 * 5;// 5 minutes buffer
     size_t frameSize = current_numChannels * sizeof(uint16_t);
-    if (fifoBuffer != NULL) free(fifoBuffer);
-    fifoBuffer = malloc(frameCount * frameSize);
-    if (fifoBuffer == NULL) debugLog("Fuck");
+    fifoBuffer = realloc(fifoBuffer, frameCount * frameSize);// Is as good as malloc
     audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
 
-
+    _playerIsStarving = true;// Enqueue some zeros at first
     SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
     _checkerror(result);
     debugLog("Initialized playback");
 }
 
-ssize_t audioplayer_enqueuPCMFrames(uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTime) {
+void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTime) {
     size_t frameSize = current_numChannels * sizeof(uint16_t);
     size_t frames = pcmSize / frameSize;// This should always fit, as MediaCodec uses 16 bit PCM
     ssize_t written = audio_utils_fifo_write(&fifo, pcmBuffer, frames);
 
-    if (playerBufferQueueState.count == 0 && written > 0) {
+    // Test if the buffers are empty
+    if (_playerIsStarving && pcmSize > 0) {
         debugLog("initial enqueue, buffer was empty. Gonna enqueue zeros to kickstart playback");
         const char zero = '\0';
         SLresult result = (*playerBufferQueue)->Enqueue(playerBufferQueue, &zero, sizeof(zero));
         _checkerror(result);
-    } else {
-        debugLog("Audio fifo is full and no data in the audio buffer queue?!!");
+
+        _playerIsStarving = false;
     }
-    return written;
+    if (written == 0) {
+        debugLog("FiFo queue is full, slowing down");
+        struct timespec req = {0}, rem = {0};
+        req.tv_sec = (time_t) 3;// Let's sleep for a while
+        nanosleep(&req, &rem);
+        // TODO if playback is stopped I could see this looping infinitely
+        audioplayer_enqueuePCMFrames(pcmBuffer, pcmSize, playbackTime);
+    }
 }
 
 void audioplayer_stopPlayback() {
@@ -278,15 +306,9 @@ void audioplayer_stopPlayback() {
         debugLog("Stopped playback");
     }
 
-    // Cleanup audioplayer so we can use different parameters
+    // Cleanup audio-player so we can use different parameters
     _cleanupBufferQueueAudioPlayer();
-
-    //uint8_t *buffer = temp_buffer;
-    //temp_buffer = NULL;
-    //if (buffer != NULL) free(buffer);
-
     audio_utils_fifo_deinit(&fifo);
-    //free(sample_fifo_buffer);
 }
 
 // shut down the native audio system

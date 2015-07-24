@@ -21,7 +21,7 @@ extern "C" {
 // Initialize the OpenSL audio interface
 void audioplayer_initGlobal(uint32_t samplesPerSec, uint32_t framesPerBuffer);
 void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels);
-ssize_t audioplayer_enqueuPCMFrames(uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTime);
+void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTime);
 void audioplayer_stopPlayback();
 void audioplayer_cleanup();
 
