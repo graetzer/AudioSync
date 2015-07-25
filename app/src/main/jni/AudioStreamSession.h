@@ -13,7 +13,6 @@
 #ifndef AUDIOSYNC_STREAM
 #define AUDIOSYNC_STREAM
 
-#include <media/NdkMediaExtractor.h>
 #include <media/NdkMediaFormat.h>
 #include <pthread.h>
 #include "jrtplib/rtpsession.h"
@@ -24,6 +23,7 @@ public:
         log("Deallocating AudioStream");
         if (format) AMediaFormat_delete(format);
     }
+
     virtual void Stop() {
         if (isRunning) {
             isRunning = false;// Should kill them all
@@ -43,18 +43,27 @@ public:
         return isRunning;
     }
 
-    pthread_t networkThread = 0, ntpThread = 0;
 protected:
+    pthread_t networkThread = 0, ntpThread = 0;
     bool isRunning = true;
     AMediaFormat *format;
 
-    void log(const char* logStr, ...);
+    void log(const char *logStr, ...);
 };
 
 // Initializer functions
-AudioStreamSession *audiostream_startStreaming(uint16_t portbase, AMediaExtractor *extractor);
+//AudioStreamSession *audiostream_startStreaming(uint16_t portbase, AMediaExtractor *extractor);
 
-AudioStreamSession * audiostream_startReceiving(const char *host, uint16_t portbase);
+//AudioStreamSession * audiostream_startReceiving(const char *host, uint16_t portbase);
 // TODO An error callback would be nice
+
+
+#define SNTP_PORT_OFFSET 3
+// IMPORTANT: The local timestamp unit MUST be set, otherwise
+//            RTCP Sender Report info will be calculated wrong
+//            In this case, we'll be sending 1000 samples each second, so we'll
+//            put the timestamp unit to (1.0/1000.0)
+// AMediaExtractor uses microseconds too, so we can transport the correct playback time
+#define TIMESTAMP_UNITS (1.0 / 1000.0)
 
 #endif

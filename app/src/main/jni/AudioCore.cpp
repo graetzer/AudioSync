@@ -17,7 +17,9 @@
 #include <signal.h>
 #include <assert.h>
 #include "audioplayer.h"
-#include "audiostream.h"
+#include "AudioStreamSession.h"
+#include "SenderSession.h"
+#include "ReceiverSession.h"
 #include "decoder.h"
 
 #ifdef __cplusplus
@@ -92,7 +94,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
 
     debugLog("Audio file offset: %ld, size: %ld", outStart, fileSize);
     AMediaExtractor *extr = decoder_createExtractor(fd, outStart, fileSize);
-    audioSession = audiostream_startStreaming((uint16_t)portbase, extr);//*/
+    audioSession = SenderSession::StartStreaming((uint16_t)portbase, extr);//*/
 
     AAsset_close(asset);
 
@@ -113,7 +115,7 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStre
  */
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startReceiving (JNIEnv *env, jobject thiz, jstring jHost, jint portbase) {
     const char *host = env->GetStringUTFChars(jHost, 0);
-    audioSession = audiostream_startReceiving(host, (uint16_t)portbase);
+    audioSession = ReceiverSession::StartReceiving(host, (uint16_t)portbase);
     env->ReleaseStringUTFChars(jHost, host);
 }
 

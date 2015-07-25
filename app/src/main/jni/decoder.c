@@ -233,6 +233,7 @@ bool decoder_dequeueBuffer(AMediaCodec *codec,
         if (info.size > 0) {
             uint8_t *pcmBuffer = AMediaCodec_getOutputBuffer(codec, (size_t) bufIdx, NULL);
             sinkFunc(pcmBuffer + info.offset, (size_t) info.size, info.presentationTimeUs);
+            //debugLog("Written %d", info.size);
         }
         int status = AMediaCodec_releaseOutputBuffer(codec, (size_t) bufIdx, false);
         if (status != AMEDIA_OK) return false;

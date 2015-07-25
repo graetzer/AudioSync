@@ -96,6 +96,9 @@ ssize_t audio_utils_fifo_write(struct audio_utils_fifo *fifo, const void *buffer
     int32_t front = atomic_load_explicit(&fifo->mFront, memory_order_acquire);
     int32_t rear = (int32_t) fifo->mRear;
     size_t availToWrite = fifo->mFrameCount - audio_utils_fifo_diff(fifo, rear, front);
+    if (count == 0) {
+        __android_log_print(ANDROID_LOG_WARN, "dd", "There is no data available");
+    }
     if (availToWrite > count) {
         availToWrite = count;
     }
