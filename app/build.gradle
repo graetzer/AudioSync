@@ -12,6 +12,16 @@ model {
             versionName = "1.0"
         }
     }
+
+    android.splits {
+        abi {
+            enable true
+            reset()
+            include 'x86', 'armeabi-v7a', 'mips'
+            universalApk true
+        }
+    }
+
     android.buildTypes {
         release {
             isMinifyEnabled = false
@@ -28,7 +38,7 @@ model {
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }
     android.productFlavors {
-        create("armeabi")// TODO put in "all" after it works, increases compiler time
+        create("all")// TODO put in "all" after it works, increases compiler time
     }
 }
 dependencies {
