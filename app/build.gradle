@@ -38,7 +38,7 @@ model {
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }
     android.productFlavors {
-        create("all")// TODO put in "all" after it works, increases compiler time
+        create("armabi")// TODO put in "all" after it works, increases compiler time
     }
 }
 dependencies {
