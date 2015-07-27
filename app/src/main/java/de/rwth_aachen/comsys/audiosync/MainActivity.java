@@ -22,6 +22,11 @@ public class MainActivity extends Activity implements MainActivityFragment.ICall
         mAudioCore = new AudioCore(this);
         mNSDHelper = new NsdHelper(this);
         mNSDHelper.initializeNsd();
+
+        Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);
+        if (frag instanceof MainActivityFragment) {
+            ((MainActivityFragment)frag).setAudioCore(mAudioCore);
+        }
     }
 
     @Override

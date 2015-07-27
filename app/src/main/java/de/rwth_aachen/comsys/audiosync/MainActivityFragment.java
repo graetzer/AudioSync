@@ -6,8 +6,11 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ListView;
 import android.widget.TextView;
+import java.util.ArrayList;
 
 
 /**
@@ -52,6 +55,50 @@ public class MainActivityFragment extends Fragment {
                 mCallbacks.startListening();
             }
         });
+
+        rtpSourceListAdapter =
+                new AudioSourcesAdapter(getActivity(), rtpSourceList);
+        ListView rtpSourceListView = (ListView)view.findViewById(R.id.rtpSourceList);
+        rtpSourceListView.setAdapter(rtpSourceListAdapter);
+
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                updateStats();
+            }});
+        thread.start();
+    }
+
+    AudioSourcesAdapter rtpSourceListAdapter;
+    final ArrayList<AudioSource> rtpSourceList = new ArrayList<AudioSource>();
+
+    public void updateStats() {
+        while(!getActivity().isDestroyed()) {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ex) {
+                break;
+            }
+
+            rtpSourceList.clear();
+            for (int i = 0; i < mAudioCore.getRtpSourceCount(); ++i) {
+                AudioSource source = new AudioSource();
+
+                source.name = mAudioCore.getRtpSourceName(i);
+                source.jitter = mAudioCore.getRtpSourceJitter(i);
+                source.timeOffset = mAudioCore.getRtpSourceTimeOffset(i);
+                source.packetsLost = mAudioCore.getRtpSourcePacketsLost(i);
+
+                rtpSourceList.add(source);
+            }
+
+            this.getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    rtpSourceListAdapter.notifyDataSetChanged();
+                }
+            });
+        }
     }
 
     @Override
@@ -63,6 +110,12 @@ public class MainActivityFragment extends Fragment {
     interface ICallbacks {
         void startSending();
         void startListening();
+    }
+
+    AudioCore mAudioCore;
+
+    public void setAudioCore(AudioCore core) {
+        mAudioCore = core;
     }
 
     public void resetUI() {

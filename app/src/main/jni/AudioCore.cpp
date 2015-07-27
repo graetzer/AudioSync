@@ -21,6 +21,7 @@
 #include "SenderSession.h"
 #include "ReceiverSession.h"
 #include "decoder.h"
+#include "UIStats.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,6 +128,60 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startRece
 JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServices(JNIEnv *env, jobject thiz) {
     audioplayer_stopPlayback();
     if (audioSession) audioSession->Stop();
+}
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    getRtpSourceCount
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceCount(JNIEnv *env, jobject thiz) {
+    return getRtpSourceCount();
+}
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    getRtpSourceName
+ * Signature: (I)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceName(JNIEnv *env, jobject, jint index) {
+    return getRtpSourceName(env, index);
+}
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    getRtpSourceJitter
+ * Signature: (I)I
+ */
+JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceJitter(JNIEnv *env, jobject thiz, jint index) {
+    return 0;
+}
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    getRtpSourcePacketsLost
+ * Signature: (I)I
+ */
+JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourcePacketsLost(JNIEnv *env, jobject thiz, jint index) {
+    return 0;
+}
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    getRtpSourceTimeOffset
+ * Signature: (I)I
+ */
+JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceTimeOffset(JNIEnv *env, jobject thiz, jint index) {
+    return 0;
+}
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    getRtpSourceSender
+ * Signature: (I)Z
+ */
+JNIEXPORT jboolean JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceSender(JNIEnv *env, jobject, jint index) {
+  return false;
 }
 
 #ifdef __cplusplus

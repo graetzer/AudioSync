@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TableLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/border"
+    android:stretchColumns="1">
+        <TableRow>
+            <TextView android:padding="3dip" android:text="Name"/>
+            <TextView android:id="@+id/rtpSourceName" android:gravity="end" android:padding="3dip" android:text="ASD"/>
+        </TableRow>
+        <TableRow>
+            <TextView android:padding="3dip" android:text="Time Offset"/>
+            <TextView android:id="@+id/rtpTimeOffset" android:layout_gravity="end" android:padding="3dip" android:text="ASD"/>
+        </TableRow>
+        <TableRow>
+            <TextView android:padding="3dip" android:text="Jitter"/>
+            <TextView android:id="@+id/rtpJitter" android:layout_gravity="end" android:padding="3dip" android:text="ASD"/>
+        </TableRow>
+        <TableRow>
+            <TextView android:padding="3dip" android:text="Lost packets"/>
+            <TextView android:id="@+id/rtpLostPackets" android:layout_gravity="end" android:padding="3dip" android:text="ASD"/>
+        </TableRow>
+</TableLayout>

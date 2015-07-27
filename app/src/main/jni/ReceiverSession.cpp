@@ -18,6 +18,7 @@
 #include "apppacket.h"
 #include "audioplayer.h"
 #include "decoder.h"
+#include "UIStats.h"
 
 using namespace jrtplib;
 
@@ -65,8 +66,23 @@ void ReceiverSession::RunNetwork() {
     uint16_t lastSeqNum = 0;
     while (hasInput && isRunning) {
         BeginDataAccess();
+        clearRtpSources();
         if (GotoFirstSourceWithData()) {
             do {
+
+                RTPSourceData * sourceData = GetCurrentSourceInfo();
+
+                size_t nameLen = 0;
+                uint8_t *nameData = sourceData->SDES_GetCNAME(&nameLen);
+                std::string name(reinterpret_cast<const char*>(nameData), nameLen);
+
+                RTPSourceInfo info = {
+                    name, // name
+                    sourceData->INF_GetJitter(), // jitter
+                    sourceData->RR_GetPacketsLost(), // packet loss
+                    0 // time offset
+                };
+
                 RTPPacket *pack;
                 while ((pack = GetNextPacket()) != NULL) {
                     // We repurposed the marker flag as end of file

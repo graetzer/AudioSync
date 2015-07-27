@@ -18,6 +18,7 @@
 
 #include "decoder.h"
 #include "apppacket.h"
+#include "UIStats.h"
 
 #define PACKET_GAP_MICRO 2000
 using namespace jrtplib;
@@ -95,8 +96,22 @@ void SenderSession::RunNetwork() {
         // Not really necessary, we are not using this
         BeginDataAccess();
         // check incoming packets
+        clearRtpSources();
         if (GotoFirstSourceWithData()) {
             do {
+                RTPSourceData * sourceData = GetCurrentSourceInfo();
+
+                size_t nameLen = 0;
+                uint8_t *nameData = sourceData->SDES_GetCNAME(&nameLen);
+                std::string name(reinterpret_cast<const char*>(nameData), nameLen);
+
+                RTPSourceInfo info = {
+                    name, // name
+                    sourceData->INF_GetJitter(), // jitter
+                    sourceData->RR_GetPacketsLost(), // packet loss
+                    0 // time offset
+                };
+
                 RTPPacket *pack;
                 while ((pack = GetNextPacket()) != NULL) {
                     log("The sender should not get packets !\n");

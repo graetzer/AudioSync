@@ -87,6 +87,32 @@ public class AudioCore {
      */
     private native void stopServices();
 
+    /**
+     * Returns the number of available RTPSources
+     */
+    public native int getRtpSourceCount();
+
+    /**
+     * Returns the number of available RTPSources
+     */
+    public native String getRtpSourceName(int index);
+    /**
+     * Returns the name of the rtp source
+     */
+    public native int getRtpSourceJitter(int index);
+    /**
+     * Returns the number of lost packets
+     */
+    public native int getRtpSourcePacketsLost(int index);
+    /**
+     * Returns the time offset in ms
+     */
+    public native int getRtpSourceTimeOffset(int index);
+    /**
+     * Returns true if the RTP Source sent data in the past
+     */
+    public native boolean getRtpSourceSender(int index);
+
     static {
         System.loadLibrary("AudioCore");
     }
