@@ -13,14 +13,14 @@ model {
         }
     }
 
-    android.splits {
+    /*android.splits {
         abi {
             enable true
             reset()
             include 'x86', 'armeabi-v7a', 'mips'
             universalApk true
         }
-    }
+    }*/
 
     android.buildTypes {
         release {
@@ -32,8 +32,8 @@ model {
         moduleName = "AudioCore"
         //  -pedantic  even the android headers show warnings with that
         // -Wshadow
-        CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-Iortp/include/"]
-        cppFlags += ["-std=c++11", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-Iortp/include/"]
+        CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra", "-DHAVE_CONFIG_H"]
+        cppFlags += ["-std=c++11", "-Wall", "-Wextra", "-DHAVE_CONFIG_H"]
         stl = "gnustl_static" // supports atomics
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]
     }

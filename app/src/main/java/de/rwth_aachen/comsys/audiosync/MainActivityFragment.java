@@ -6,11 +6,11 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
 import android.widget.TextView;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 
 /**
@@ -70,7 +70,7 @@ public class MainActivityFragment extends Fragment {
     }
 
     AudioSourcesAdapter rtpSourceListAdapter;
-    final ArrayList<AudioSource> rtpSourceList = new ArrayList<AudioSource>();
+    final ArrayList<AudioDestination> rtpSourceList = new ArrayList<AudioDestination>();
 
     public void updateStats() {
         while(!getActivity().isDestroyed()) {
@@ -81,8 +81,11 @@ public class MainActivityFragment extends Fragment {
             }
 
             rtpSourceList.clear();
-            for (int i = 0; i < mAudioCore.getRtpSourceCount(); ++i) {
-                AudioSource source = new AudioSource();
+            AudioDestination dest[] = mAudioCore.getAudioDestinations();
+            if (dest != null)
+                rtpSourceList.addAll(Arrays.asList(dest));
+            /*for (int i = 0; i < mAudioCore.getRtpSourceCount(); ++i) {
+                AudioDestination source = new AudioDestination();
 
                 source.name = mAudioCore.getRtpSourceName(i);
                 source.jitter = mAudioCore.getRtpSourceJitter(i);
@@ -90,7 +93,7 @@ public class MainActivityFragment extends Fragment {
                 source.packetsLost = mAudioCore.getRtpSourcePacketsLost(i);
 
                 rtpSourceList.add(source);
-            }
+            }*/
 
             this.getActivity().runOnUiThread(new Runnable() {
                 @Override

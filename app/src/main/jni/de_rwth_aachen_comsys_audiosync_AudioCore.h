@@ -48,52 +48,12 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServi
   (JNIEnv *, jobject);
 
 /*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Class:     Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestinations
  * Method:    getRtpSourceCount
- * Signature: ()I
+ * Signature: ()[Lde/rwth_aachen/comsys/audiosync/AudioDestination;
  */
-JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceCount
+JNIEXPORT jobjectArray JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestinations
   (JNIEnv *, jobject);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    getRtpSourceName
- * Signature: (I)Ljava/lang/String;
- */
-JNIEXPORT jstring JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceName
-  (JNIEnv *, jobject, jint);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    getRtpSourceJitter
- * Signature: (I)I
- */
-JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceJitter
-  (JNIEnv *, jobject, jint);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    getRtpSourcePacketsLost
- * Signature: (I)I
- */
-JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourcePacketsLost
-  (JNIEnv *, jobject, jint);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    getRtpSourceTimeOffset
- * Signature: (I)I
- */
-JNIEXPORT jint JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceTimeOffset
-  (JNIEnv *, jobject, jint);
-
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    getRtpSourceSender
- * Signature: (I)Z
- */
-JNIEXPORT jboolean JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getRtpSourceSender
-  (JNIEnv *, jobject, jint);
 
 #ifdef __cplusplus
 }

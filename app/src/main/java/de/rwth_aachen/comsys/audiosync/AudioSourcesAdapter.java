@@ -7,22 +7,20 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.TextView;
 
-import org.w3c.dom.Text;
-
 import java.util.ArrayList;
 
 /**
  * Created by Jan on 27.07.2015.
  */
-public class AudioSourcesAdapter extends ArrayAdapter<AudioSource> {
-    public AudioSourcesAdapter(Context context, ArrayList<AudioSource> users) {
+public class AudioSourcesAdapter extends ArrayAdapter<AudioDestination> {
+    public AudioSourcesAdapter(Context context, ArrayList<AudioDestination> users) {
         super(context, 0, users);
     }
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         // Get the data item for this position
-        AudioSource source = getItem(position);
+        AudioDestination source = getItem(position);
         // Check if an existing view is being reused, otherwise inflate the view
         if (convertView == null) {
             convertView = LayoutInflater.from(getContext()).inflate(R.layout.item_rtpsource, parent, false);

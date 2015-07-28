@@ -18,7 +18,8 @@
 #include "apppacket.h"
 #include "audioplayer.h"
 #include "decoder.h"
-#include "UIStats.h"
+
+#define NTP_PACKET_INTERVAL_SEC 3
 
 using namespace jrtplib;
 
@@ -28,7 +29,6 @@ static void _checkerror(int rtperr) {
         pthread_exit(0);
     }
 }
-
 
 void ReceiverSession::RunNetwork() {
     log("Sending Hi package");
@@ -66,23 +66,8 @@ void ReceiverSession::RunNetwork() {
     uint16_t lastSeqNum = 0;
     while (hasInput && isRunning) {
         BeginDataAccess();
-        clearRtpSources();
         if (GotoFirstSourceWithData()) {
             do {
-
-                RTPSourceData * sourceData = GetCurrentSourceInfo();
-
-                size_t nameLen = 0;
-                uint8_t *nameData = sourceData->SDES_GetCNAME(&nameLen);
-                std::string name(reinterpret_cast<const char*>(nameData), nameLen);
-
-                RTPSourceInfo info = {
-                    name, // name
-                    sourceData->INF_GetJitter(), // jitter
-                    sourceData->RR_GetPacketsLost(), // packet loss
-                    0 // time offset
-                };
-
                 RTPPacket *pack;
                 while ((pack = GetNextPacket()) != NULL) {
                     // We repurposed the marker flag as end of file
@@ -142,7 +127,7 @@ void ReceiverSession::RunNetwork() {
         EndDataAccess();
 
         // Ok we should give other threads the opportunity to run
-        RTPTime::Wait(RTPTime(0, 2000));// Wait 2000us
+        RTPTime::Wait(RTPTime(0, 3000));// Wait 3000us
 
 #ifndef RTP_SUPPORT_THREAD
         status = sess.Poll();
@@ -154,7 +139,7 @@ void ReceiverSession::RunNetwork() {
 
     while (hasOutput && status == AMEDIA_OK && isRunning) {
         hasOutput = decoder_dequeueBuffer(codec, &audioplayer_enqueuePCMFrames);
-        RTPTime::Wait(RTPTime(0, 1000));// Wait 1000us
+        RTPTime::Wait(RTPTime(0, 3000));
     }
     AMediaCodec_stop(codec);
     log("Finished decoding");
@@ -183,7 +168,7 @@ void ReceiverSession::SetFormat(AMediaFormat *newFormat) {
     }
 }
 
-void ReceiverSession::SetClockOffset(struct timeval val) {
+void ReceiverSession::SendClockOffset(struct timeval val) {
     audiostream_clockOffset off = {.offsetSeconds = val.tv_sec, .offetUSeconds = val.tv_usec};
     this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCKOFFSET, AUDIOSTREAM_APP_NAME, &off,
                             sizeof(audiostream_clockOffset));
@@ -215,21 +200,19 @@ void * ReceiverSession::RunNetworkThread(void *ctx) {
     return NULL;
 }
 
+char *_host;
+int _ntpport;
 void * ReceiverSession::RunNTPClient(void *ctx) {
     ReceiverSession *sess = (ReceiverSession *) ctx;
-    char *host = strdup("");
-    int port = 123 + SNTP_PORT_OFFSET;
-
     while (sess->IsRunning()) {
         struct timeval tv;
-        int err = msntp_get_offset(host, port, &tv);
-        if (err) {
-            debugLog("NTP client error %d", err);
-        } else {
-            sess->SetClockOffset(tv);
-        }
+        int err = msntp_get_offset(_host, _ntpport, &tv);
+        if (err) debugLog("NTP client error %d", err);
+        else sess->SendClockOffset(tv);
+
+        RTPTime::Wait(RTPTime(NTP_PACKET_INTERVAL_SEC, 0));
     }
-    free(host);
+    free(_host);
     return NULL;
 }
 
@@ -246,7 +229,7 @@ AudioStreamSession *ReceiverSession::StartReceiving(const char *host, uint16_t p
     AMediaFormat_setInt32(format, "encoder-padding", 1579);
     sess->SetFormat(format);
 
-    sessparams.SetOwnTimestampUnit(TIMESTAMP_UNITS);
+    sessparams.SetOwnTimestampUnit(AUDIOSYNC_TIMESTAMP_UNITS);
     sessparams.SetAcceptOwnPackets(false);
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
     //uint16_t portbase = RTP_PORT;
@@ -263,6 +246,9 @@ AudioStreamSession *ReceiverSession::StartReceiving(const char *host, uint16_t p
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_create(&(sess->networkThread), &attr, &ReceiverSession::RunNetworkThread, sess);
-
+    // TODO kind of ugly
+    _host = strdup(host);
+    _ntpport = portbase + AUDIOSYNC_SNTP_PORT_OFFSET;
+    pthread_create(&(sess->ntpThread), NULL, &ReceiverSession::RunNTPClient, sess);
     return sess;
 }

@@ -18,20 +18,16 @@
 
 #include "decoder.h"
 #include "apppacket.h"
-#include "UIStats.h"
 
 #define PACKET_GAP_MICRO 2000
 using namespace jrtplib;
 
 static void _checkerror(int rtperr) {
     if (rtperr < 0) {
-
         debugLog("RTP Error: %s", RTPGetErrorString(rtperr).c_str());
         pthread_exit(0);
     }
 }
-
-static uint16_t _portbase;
 
 void SenderSession::RunNetwork() {
     // Waiting for connections and sending them data
@@ -77,7 +73,7 @@ void SenderSession::RunNetwork() {
                 //SendPacketRecursive(buffer, (size_t) written, 0, false, timestampinc);
 
             } //else
-                status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
+            status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
         } else {
             buffer[0] = '\0';
             status = SendPacket(buffer, 1, 0, true, timestampinc);
@@ -90,28 +86,14 @@ void SenderSession::RunNetwork() {
         // number of these packets. In any case the client needs to mitigate this.
         // TODO auto-adjust this value based on lost packets
         // TODO figure out how to utilize throughput
-        //RTPTime::Wait(RTPTime(0, PACKET_GAP_MICRO));
         RTPTime::Wait(RTPTime(0, timestampinc/4));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
+
         // check incoming packets
-        clearRtpSources();
         if (GotoFirstSourceWithData()) {
             do {
-                RTPSourceData * sourceData = GetCurrentSourceInfo();
-
-                size_t nameLen = 0;
-                uint8_t *nameData = sourceData->SDES_GetCNAME(&nameLen);
-                std::string name(reinterpret_cast<const char*>(nameData), nameLen);
-
-                RTPSourceInfo info = {
-                    name, // name
-                    sourceData->INF_GetJitter(), // jitter
-                    sourceData->RR_GetPacketsLost(), // packet loss
-                    0 // time offset
-                };
-
                 RTPPacket *pack;
                 while ((pack = GetNextPacket()) != NULL) {
                     log("The sender should not get packets !\n");
@@ -138,7 +120,7 @@ void SenderSession::RunNetwork() {
     BYEDestroy(RTPTime(2, 0), 0, 0);
 }
 
-void SenderSession::SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
+/*void SenderSession::SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
                                         uint32_t timestampinc) {
     const size_t maxSize = 1024;
     if (len > maxSize) {
@@ -148,7 +130,7 @@ void SenderSession::SendPacketRecursive(const void *data, size_t len, uint8_t pt
     } else {
         SendPacket(data, len, pt, mark, timestampinc);
     }
-}
+}*/
 
 RTPAddress *SenderSession::addressFromData(RTPSourceData *dat) {
     short port = 0;
@@ -218,6 +200,12 @@ void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receive
     if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCKOFFSET
         && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockOffset)) {
         audiostream_clockOffset *clock = (audiostream_clockOffset *) apppacket->GetAPPData();
+        debugLog("Received clockoffser: %ld.%6ld", clock->offsetSeconds, clock->offetUSeconds);
+
+        RTPSourceData *source = GetSourceInfo(apppacket->GetSSRC());
+        if (source) {
+
+        }
         // TODO
     }
 }
@@ -227,9 +215,10 @@ void * SenderSession::RunNetworkThread(void *ctx) {
     return NULL;
 }
 
+RTPUDPv4TransmissionParams transparams;
 void * SenderSession::RunNTPServer(void *ctx) {
     SenderSession *sess = (SenderSession *) ctx;
-    uint16_t port = _portbase + (uint16_t) SNTP_PORT_OFFSET;
+    int port = transparams.GetPortbase() + AUDIOSYNC_SNTP_PORT_OFFSET;
     if (msntp_start_server(port) != 0)
         return NULL;
 
@@ -246,12 +235,12 @@ void * SenderSession::RunNTPServer(void *ctx) {
 SenderSession * SenderSession::StartStreaming(uint16_t portbase, AMediaExtractor *extractor) {
     SenderSession *sess = new SenderSession();
     RTPSessionParams sessparams;
-    RTPUDPv4TransmissionParams transparams;
+
     // IMPORTANT: The local timestamp unit MUST be set, otherwise
     //            RTCP Sender Report info will be calculated wrong
     // In this case, we'll be sending 10 samples each second, so we'll
     // put the timestamp unit to (1.0/10.0)
-    sessparams.SetOwnTimestampUnit(TIMESTAMP_UNITS);
+    sessparams.SetOwnTimestampUnit(AUDIOSYNC_TIMESTAMP_UNITS);
     sessparams.SetReceiveMode(RTPTransmitter::ReceiveMode::AcceptAll);
     //sessparams.SetAcceptOwnPackets(false);
     transparams.SetPortbase(portbase);
@@ -261,9 +250,8 @@ SenderSession * SenderSession::StartStreaming(uint16_t portbase, AMediaExtractor
     sess->SetDefaultMark(false);
     sess->extractor = extractor;
     pthread_create(&(sess->networkThread), NULL, &(SenderSession::RunNetworkThread), sess);
-    debugLog("Started RTP server on port %u, now waiting for clients", portbase);
+    pthread_create(&sess->ntpThread, NULL, &SenderSession::RunNTPServer, sess);
 
-    _portbase = portbase;
-    //pthread_create(&(ctx->ntpThread), NULL, _serveNTPServer, ctx);
+    debugLog("Started RTP server on port %u, now waiting for clients", portbase);
     return sess;
 }

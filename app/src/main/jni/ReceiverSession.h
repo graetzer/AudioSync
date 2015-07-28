@@ -25,7 +25,7 @@ protected:
 
     void SetFormat(AMediaFormat *newFormat);
 
-    void SetClockOffset(struct timeval val);
+    void SendClockOffset(struct timeval val);
 
     void OnAPPPacket(jrtplib::RTCPAPPPacket *apppacket, const jrtplib::RTPTime &receivetime,
                      const jrtplib::RTPAddress *senderaddress);

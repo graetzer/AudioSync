@@ -26,8 +26,8 @@ private:
     AMediaExtractor *extractor;
 
     void RunNetwork();
-    void SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
-                             uint32_t timestampinc);
+    /*void SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
+                             uint32_t timestampinc);*/
 
     jrtplib::RTPAddress *addressFromData(jrtplib::RTPSourceData *dat);
 
