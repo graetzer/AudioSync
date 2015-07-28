@@ -77,7 +77,7 @@ void SenderSession::RunNetwork() {
         } else {
             buffer[0] = '\0';
             status = SendPacket(buffer, 1, 0, true, timestampinc);
-            log("Sender: End of stream. %ld", time);
+            log("Sender: End of stream.");
         }
         _checkerror(status);
 
@@ -86,7 +86,7 @@ void SenderSession::RunNetwork() {
         // number of these packets. In any case the client needs to mitigate this.
         // TODO auto-adjust this value based on lost packets
         // TODO figure out how to utilize throughput
-        RTPTime::Wait(RTPTime(0, timestampinc/4));
+        RTPTime::Wait(RTPTime(0, timestampinc));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
