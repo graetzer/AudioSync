@@ -26,6 +26,9 @@ public class AudioSourcesAdapter extends ArrayAdapter<AudioDestination> {
             convertView = LayoutInflater.from(getContext()).inflate(R.layout.item_rtpsource, parent, false);
         }
 
+        if(source == null)
+            return convertView;
+
         TextView tvName = (TextView)convertView.findViewById(R.id.rtpSourceName);
         TextView tvJitter = (TextView)convertView.findViewById(R.id.rtpJitter);
         TextView tvPacketLoss = (TextView)convertView.findViewById(R.id.rtpLostPackets);

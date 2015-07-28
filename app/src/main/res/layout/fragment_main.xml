@@ -3,8 +3,8 @@
     android:orientation="vertical"
     android:layout_height="match_parent" android:paddingLeft="@dimen/activity_horizontal_margin"
     android:paddingRight="@dimen/activity_horizontal_margin"
-    android:paddingTop="@dimen/activity_vertical_margin"
-    android:paddingBottom="@dimen/activity_vertical_margin" tools:context=".MainActivityFragment">
+    android:paddingTop="10dip"
+    android:paddingBottom="10dip" tools:context=".MainActivityFragment">
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
