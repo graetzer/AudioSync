@@ -70,6 +70,10 @@ ssize_t audio_utils_fifo_write(struct audio_utils_fifo *fifo, const void *buffer
 // or partial if the FIFO was almost empty.
 // A negative return value indicates an error.  Currently there are no errors defined.
 ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, void *buffer, size_t count);
+
+// Return the current number of readable frames
+size_t audio_utils_fifo_available(struct audio_utils_fifo *fifo);
+
 #ifdef __cplusplus
 }
 #endif

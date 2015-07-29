@@ -146,6 +146,7 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
     int i = 0;
     if (audioSession->GotoFirstSource())
         do {
+            if (audioSession->GetCurrentSourceInfo()->IsOwnSSRC()) continue;
             i++;
         } while (audioSession->GotoNextSource());
     if (i == 0) return NULL;
@@ -161,6 +162,8 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
     i = 0;
     if (audioSession->GotoFirstSource()) {
         do {
+            if (audioSession->GetCurrentSourceInfo()->IsOwnSSRC()) continue;
+
             jrtplib::RTPSourceData *sourceData = audioSession->GetCurrentSourceInfo();
             size_t nameLen = 0;
             uint8_t *nameChars = sourceData->SDES_GetCNAME(&nameLen);
@@ -170,7 +173,7 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
             jobject dest = env->NewObject(clzz, init);
             env->SetObjectField(dest, nameID, env->NewStringUTF(chars));
             env->SetIntField(dest, jitterID, (jint) sourceData->INF_GetJitter());
-            env->SetIntField(dest, timeOffsetID, 0);
+            env->SetIntField(dest, timeOffsetID, (jint)sourceData->GetClockOffsetUSeconds());
             env->SetIntField(dest, packetsLostID, (jint) sourceData->RR_GetPacketsLost());
             env->SetObjectArrayElement(ret, i, dest);
 

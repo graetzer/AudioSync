@@ -13,6 +13,7 @@
 #include "apppacket.h"
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 const uint8_t *audiostream_app_name = (const uint8_t*) "ADST";
 
@@ -71,3 +72,12 @@ ByteBuffer bb = ByteBuffer.wrap(bytes);
 mf.setByteBuffer("csd-0", bb);
      * */
 }
+
+int64_t audiosync_nowUSecs() {
+    struct timespec ts;
+    int err = clock_gettime(CLOCK_REALTIME, &ts);
+    if (err) return 0;
+    int64_t now = ts.tv_sec*100000 + ts.tv_nsec/1000;
+    return now;
+}
+

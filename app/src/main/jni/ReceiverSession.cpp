@@ -82,17 +82,12 @@ void ReceiverSession::RunNetwork() {
                     timestamp -= beginTimestamp;
                     // Handle lost packets, TODO How does this work with multiple senders?
                     if (pack->GetSequenceNumber() == lastSeqNum + 1) {
-                        // TODO handle mutliple packages where data should be put in the codec at
-                        // the same time
-                        /*if (timestamp == lastTimestamp) {
-
-                        } else {
-
-                        }*/
+                        // TODO handle mutliple packages with same timestamp. (Decode together?)
+                        /*if (timestamp == lastTimestamp)*/
                     } else {
                         log("Packets jumped %u => %u | %.2f => %.2fs.", lastSeqNum,
-                        pack->GetSequenceNumber(), lastTimestamp / 1000000.0,
-                        timestamp / 1000000.0);
+                            pack->GetSequenceNumber(), lastTimestamp / 1E6,
+                            timestamp / 1E6);
                         // TODO evaluate the impact of this time gap parameter
                         if (timestamp - lastTimestamp > 50000) {//50 ms
                             // According to the docs we need to flushIf data is not adjacent.
@@ -126,8 +121,8 @@ void ReceiverSession::RunNetwork() {
         }
         EndDataAccess();
 
-        // Ok we should give other threads the opportunity to run
-        RTPTime::Wait(RTPTime(0, 3000));// Wait 3000us
+        // We should give other threads the opportunity to run
+        RTPTime::Wait(RTPTime(0, 3000));// TODO base time on duration of received audio?
 
 #ifndef RTP_SUPPORT_THREAD
         status = sess.Poll();
@@ -139,7 +134,7 @@ void ReceiverSession::RunNetwork() {
 
     while (hasOutput && status == AMEDIA_OK && isRunning) {
         hasOutput = decoder_dequeueBuffer(codec, &audioplayer_enqueuePCMFrames);
-        RTPTime::Wait(RTPTime(0, 3000));
+        RTPTime::Wait(RTPTime(0, 2000));
     }
     AMediaCodec_stop(codec);
     log("Finished decoding");
@@ -168,14 +163,16 @@ void ReceiverSession::SetFormat(AMediaFormat *newFormat) {
     }
 }
 
-void ReceiverSession::SendClockOffset(struct timeval val) {
-    audiostream_clockOffset off = {.offsetSeconds = val.tv_sec, .offetUSeconds = val.tv_usec};
-    this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCKOFFSET, AUDIOSTREAM_APP_NAME, &off,
+void ReceiverSession::SendClockOffset(int64_t offsetUSecs) {
+    audiostream_clockOffset off = {.timeUSeconds = audiosync_nowUSecs(),
+            .offsetUSeconds = offsetUSecs};
+    this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_OFFSET, AUDIOSTREAM_APP, &off,
                             sizeof(audiostream_clockOffset));
 }
 
 void ReceiverSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receivetime,
                                   const RTPAddress *senderaddress) {
+    // All RTCP app packages come from the central sender
     if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_MEDIAFORMAT) {
         char *formatString = (char *) apppacket->GetAPPData();
         if (formatString[apppacket->GetAPPDataLength() - 1] == '\0') {
@@ -186,30 +183,38 @@ void ReceiverSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &recei
                 log("Parsed format string %s", AMediaFormat_toString(newFormat));
                 // TODO activate this again
                 // TODO figure out how to compare formats and see if it's the same as the old
-                if (format == NULL)
-                   SetFormat(newFormat);
+                if (format == NULL)// only seet this right now, if there is nothing else
+                    SetFormat(newFormat);
                 else
                     AMediaFormat_delete(newFormat);
             }
         }
+    } else if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_SYNC
+               && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockSync)) {
+        audiostream_clockSync *sync = (audiostream_clockSync *) apppacket->GetAPPData();
+        audioplayer_alignPlayback(sync->playbackUSeconds, sync->hostUSeconds);
     }
 }
 
-void * ReceiverSession::RunNetworkThread(void *ctx) {
+void *ReceiverSession::RunNetworkThread(void *ctx) {
     ((ReceiverSession *) ctx)->RunNetwork();
     return NULL;
 }
 
 char *_host;
 int _ntpport;
-void * ReceiverSession::RunNTPClient(void *ctx) {
+
+void *ReceiverSession::RunNTPClient(void *ctx) {
     ReceiverSession *sess = (ReceiverSession *) ctx;
     while (sess->IsRunning()) {
         struct timeval tv;
         int err = msntp_get_offset(_host, _ntpport, &tv);
         if (err) debugLog("NTP client error %d", err);
-        else sess->SendClockOffset(tv);
-
+        else {
+            int64_t offsetUSecs = tv.tv_usec + tv.tv_sec * 1000000;
+            sess->SendClockOffset(offsetUSecs);
+            audioplayer_setHostTimeOffset(offsetUSecs);
+        }
         RTPTime::Wait(RTPTime(NTP_PACKET_INTERVAL_SEC, 0));
     }
     free(_host);
@@ -242,13 +247,12 @@ AudioStreamSession *ReceiverSession::StartReceiving(const char *host, uint16_t p
     status = sess->AddDestination(addr);
     _checkerror(status);
 
-    // TODO try to set higher priorities on threads
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_create(&(sess->networkThread), &attr, &ReceiverSession::RunNetworkThread, sess);
-    // TODO kind of ugly
+    // TODO kind of ugly, can we pass this in a better way
     _host = strdup(host);
     _ntpport = portbase + AUDIOSYNC_SNTP_PORT_OFFSET;
     pthread_create(&(sess->ntpThread), NULL, &ReceiverSession::RunNTPClient, sess);
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_create(&(sess->networkThread), &attr, &ReceiverSession::RunNetworkThread, sess);
     return sess;
 }

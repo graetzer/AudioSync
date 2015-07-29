@@ -181,9 +181,9 @@ AMediaExtractor *decoder_createExtractor(int fd, off64_t offset, off64_t fileSiz
 }
 
 ssize_t decoder_extractData(AMediaExtractor *extractor, uint8_t *buffer, size_t capacity,
-                            int64_t *time) {
+                            int64_t *timeUSec) {
     ssize_t written = AMediaExtractor_readSampleData(extractor, buffer, capacity);
-    *time = AMediaExtractor_getSampleTime(extractor);
+    *timeUSec = AMediaExtractor_getSampleTime(extractor);
     AMediaExtractor_advance(extractor);// Next sample
     return written;
 }

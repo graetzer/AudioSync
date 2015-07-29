@@ -23,39 +23,32 @@
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
 
-
+// ========= OpenSL ES =========
 // engine interfaces
 static SLObjectItf engineObject = NULL;
 static SLEngineItf engineEngine;
-
 // output mix interfaces
 static SLObjectItf outputMixObject = NULL;
-
 // buffer queue player interfaces
 static SLObjectItf playerObject = NULL;
 static SLPlayItf playerPlay;
 static SLAndroidSimpleBufferQueueItf playerBufferQueue;
 static SLVolumeItf playerVolume;
 
+// ========= Audio Params =========
 // Device parameters for playback
 static uint32_t global_samplesPerSec;
 static uint32_t global_framesPerBuffers;
-// Parameters for current song
+// Parameters for current audio stream
 uint32_t current_samplesPerSec = 44100;
 uint32_t current_numChannels = 1;
+int64_t current_hostTimeOffsetUs = 0;
 
-// Current audio data queue
+// ========= Audio Data Queue =========
+// Audio data queue
 static struct audio_utils_fifo fifo;
 static void *fifoBuffer = NULL;
-
-//Temporary buffer for the audio buffer queue.
-// 4096 equals 1024 frames with 2 channels with 16bit PCM format
-#define N_BUFFERS 4
-#define MAX_BUFFER_SIZE 8192
-uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
-uint32_t tempBuffers_ix = 0;
-// TODO figure out a better way to indicate empty audio buffers
-static volatile bool _playerIsStarving = true;
+static volatile bool _playerIsStarving = true;// write / read to aligned 32bit integer is atomic
 
 // =================== Helpers ===================
 static const char *_descriptionForResult(SLresult result) {
@@ -102,7 +95,7 @@ static const char *_descriptionForResult(SLresult result) {
 static void _checkerror_internal(SLresult result, const char *f) {
     if (SL_RESULT_SUCCESS != result) {
         debugLog("%s - OpenSL ES error: %s", f, _descriptionForResult(result));
-        // TODO figure which errors to treat as fatal
+        // TODO figure out which errors to treat as fatal
         if (result != SL_RESULT_BUFFER_INSUFFICIENT) {
             exit(-1);
         }
@@ -137,13 +130,28 @@ static void _createEngine() {
     _checkerror(result);
 }
 
+// Temporary buffer for the audio buffer queue.
+// 4096 equals 1024 frames with 2 channels with 16bit PCM format
+#define N_BUFFERS 4
+#define MAX_BUFFER_SIZE 8192
+uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
+uint32_t tempBuffers_ix = 0;
+
+// Ok I'm really not sure if this is a suitable idea
+struct _timeAlignment {
+    int64_t playbackUSeconds;// The media time derived from the RTP packet timestamps
+    int64_t hostUSeconds;// When to actually play this, derived from the senders system clock
+};
+#define N_ALIGNMENTS 1024
+static struct _timeAlignment alignments[N_ALIGNMENTS];
+static int alignments_ix = 0;
+
 // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     if (fifoBuffer == NULL || bq != playerBufferQueue) return;
 
     // Assuming PCM 16
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
-
     // global_framesPerBuffers is the max amount of frames we read
     size_t frameSize = current_numChannels * sizeof(uint16_t); // 16 bit PCM data
     size_t framesPerBuffer = global_framesPerBuffers * frameSize;
@@ -156,10 +164,6 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
         size_t frameCountSize = frameCount * frameSize;
         SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
         _checkerror(result);
-
-        if (result == SL_RESULT_BUFFER_INSUFFICIENT) {
-            debugLog("Enqueue(%lu)", frameCountSize);
-        }
     } else {
         _playerIsStarving = true;
         debugLog("_bqPlayerCallback: Audio FiFo is empty");
@@ -275,31 +279,43 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     debugLog("Initialized playback");
 }
 
-void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTime) {
+void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
+                                  int64_t playbackTimeUs) {
     size_t frameSize = current_numChannels * sizeof(uint16_t);
     size_t frames = pcmSize / frameSize;// Should always fit, MediaCodec uses interleaved 16 bit PCM
     ssize_t written = audio_utils_fifo_write(&fifo, pcmBuffer, frames);
 
     // Test if the buffers are empty
     if (_playerIsStarving && written > 0) {
-        debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
-        //const char zero = '\0';
-        //SLresult result = (*playerBufferQueue)->Enqueue(playerBufferQueue, &zero, sizeof(zero));
-        //_checkerror(result);
 
-        _bqPlayerCallback(playerBufferQueue, NULL);
-        _bqPlayerCallback(playerBufferQueue, NULL);
-        //_bqPlayerCallback(playerBufferQueue, NULL);
+        // TODO put buffering back in
+        //size_t sec5 = frameSize * current_samplesPerSec * 5;
+        //if (audio_utils_fifo_available(&fifo) > sec5) {
+            debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
+
+            _bqPlayerCallback(playerBufferQueue, NULL);
+            _bqPlayerCallback(playerBufferQueue, NULL);
+            //_bqPlayerCallback(playerBufferQueue, NULL);
+        //}
     }
-
-    if (written == 0) {
+    if (!_playerIsStarving && written == 0) {
         debugLog("FiFo queue seems to be full, slowing down");
         struct timespec req = {0}, rem = {0};
-        req.tv_sec = (time_t) 3;// Let's sleep for a while
+        req.tv_sec = (time_t) 5;// Let's sleep for a while
         nanosleep(&req, &rem);
         // TODO if playback is stopped I could see this looping infinitely
-        audioplayer_enqueuePCMFrames(pcmBuffer, pcmSize, playbackTime);
+        audioplayer_enqueuePCMFrames(pcmBuffer, pcmSize, playbackTimeUs);
     }
+}
+
+void audioplayer_alignPlayback(int64_t playbackTimeUs, int64_t hostTimeUs) {
+    alignments[alignments_ix].playbackUSeconds = playbackTimeUs;
+    alignments[alignments_ix].hostUSeconds = hostTimeUs;
+    alignments_ix = (alignments_ix + 1) % N_ALIGNMENTS;
+}
+
+void audioplayer_setHostTimeOffset(int64_t offsetUs) {
+    current_hostTimeOffsetUs = offsetUs;
 }
 
 void audioplayer_stopPlayback() {

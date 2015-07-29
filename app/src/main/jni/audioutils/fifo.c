@@ -94,11 +94,8 @@ static inline size_t audio_utils_fifo_diff(struct audio_utils_fifo *fifo, int32_
 ssize_t audio_utils_fifo_write(struct audio_utils_fifo *fifo, const void *buffer, size_t count)
 {
     int32_t front = atomic_load_explicit(&fifo->mFront, memory_order_acquire);
-    int32_t rear = (int32_t) fifo->mRear;
+    int32_t rear = fifo->mRear;
     size_t availToWrite = fifo->mFrameCount - audio_utils_fifo_diff(fifo, rear, front);
-    if (count == 0) {
-        __android_log_print(ANDROID_LOG_WARN, "dd", "There is no data available");
-    }
     if (availToWrite > count) {
         availToWrite = count;
     }
@@ -146,5 +143,13 @@ ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, void *buffer, size_
                               audio_utils_fifo_sum(fifo, fifo->mFront, availToRead),
                               memory_order_release);
     }
+    return availToRead;
+}
+size_t audio_utils_fifo_available(struct audio_utils_fifo *fifo) {
+    // This will be called by the writer thread, hope this works out
+    // doesn't really matter if this is like 100% correct
+    int32_t front = fifo->mFront;
+    int32_t rear = (int32_t) fifo->mRear;
+    size_t availToRead = audio_utils_fifo_diff(fifo, rear, front);
     return availToRead;
 }

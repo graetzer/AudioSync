@@ -19,17 +19,7 @@ public:
 
     static SenderSession *StartStreaming(uint16_t portbase, AMediaExtractor *extractor);
 
-
-
-private:
-    std::atomic_int connectedSources;
-    AMediaExtractor *extractor;
-
-    void RunNetwork();
-    /*void SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
-                             uint32_t timestampinc);*/
-
-    jrtplib::RTPAddress *addressFromData(jrtplib::RTPSourceData *dat);
+protected:
 
     void OnNewSource(jrtplib::RTPSourceData *dat);
 
@@ -39,6 +29,16 @@ private:
 
     void OnAPPPacket(jrtplib::RTCPAPPPacket *apppacket, const jrtplib::RTPTime &receivetime,
                      const jrtplib::RTPAddress *senderaddress);
+
+private:
+    std::atomic_int connectedSources;
+    AMediaExtractor *extractor;
+
+    void RunNetwork();
+    /*void SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
+                             uint32_t timestampinc);*/
+    void sendClockSync(int64_t playbackUSeconds);
+    jrtplib::RTPAddress *addressFromData(jrtplib::RTPSourceData *dat);
 
     static void *RunNetworkThread(void *ctx);
 

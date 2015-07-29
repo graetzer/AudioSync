@@ -75,15 +75,19 @@ public class MainActivityFragment extends Fragment {
     public void updateStats() {
         while(!getActivity().isDestroyed()) {
             try {
-                Thread.sleep(500);
+                Thread.sleep(1000);
             } catch (InterruptedException ex) {
                 break;
             }
 
-            rtpSourceList.clear();
-            AudioDestination dest[] = mAudioCore.getAudioDestinations();
-            if (dest != null)
-                rtpSourceList.addAll(Arrays.asList(dest));
+            if (mAudioCore != null) {
+                AudioDestination dest[] = mAudioCore.getAudioDestinations();
+                if (dest != null) {
+                    rtpSourceList.clear();// Keep this even if there are no clients
+                    rtpSourceList.addAll(Arrays.asList(dest));
+                }
+            }
+
             /*for (int i = 0; i < mAudioCore.getRtpSourceCount(); ++i) {
                 AudioDestination source = new AudioDestination();
 

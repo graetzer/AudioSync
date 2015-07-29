@@ -423,6 +423,15 @@ public:
 	bool SDES_GetPrivateValue(uint8_t *prefix,size_t prefixlen,uint8_t **value,size_t *valuelen) const 		{ return SDESinf.GetPrivateValue(prefix,prefixlen,value,valuelen); }
 #endif // RTP_SUPPORT_SDESPRIV
 
+		// ============ Custom ============
+		int64_t GetClockOffsetUSeconds() {
+			return clockOffetUSeconds;
+		}
+
+		void SetClockOffsetUSeconds(int64_t offset) {
+			clockOffetUSeconds = offset;
+		}
+
 #ifdef RTPDEBUG
 	virtual void Dump();
 #endif // RTPDEBUG
@@ -449,6 +458,9 @@ protected:
 	RTPTime byetime;
 	uint8_t *byereason;
 	size_t byereasonlen;
+
+		// ============ Custom ============
+		int64_t clockOffetUSeconds = 0;
 };
 
 inline RTPPacket *RTPSourceData::GetNextPacket()

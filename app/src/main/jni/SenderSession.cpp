@@ -45,28 +45,29 @@ void SenderSession::RunNetwork() {
     while (connectedSources == 0 && isRunning) {
         RTPTime::Wait(RTPTime(2, 0));// Wait 2s
         log("Waiting for clients....");
-#ifndef RTP_SUPPORT_THREAD
-        status = sess->Poll();
-        _checkerror(status);
-#endif // RTP_SUPPORT_THREAD
     }
     if (!isRunning) return;
 
     log("Client connected, start sending");
     ssize_t written = 0;
-    int64_t lastTime = -1;
+    int64_t lastTime = -1, lastClockSync = 0;
     while (written >= 0 && isRunning) {
-        int64_t time = 0;
+        int64_t timeUs = 0;
         uint8_t buffer[8192];// TODO figure out optimum size
-        written = decoder_extractData(extractor, buffer, sizeof(buffer), &time);
-        if (lastTime == -1) lastTime = time;
-        uint32_t timestampinc = (uint32_t) (time - lastTime);// Assuming it will fit
-        lastTime = time;
+        written = decoder_extractData(extractor, buffer, sizeof(buffer), &timeUs);
+        if (lastTime == -1) lastTime = timeUs;// We need to calc
+        uint32_t timestampinc = (uint32_t) (timeUs - lastTime);// Assuming it will fit
+        lastTime = timeUs;
+
+        //
+        if (timeUs - lastClockSync > 3000000) {
+            sendClockSync(timeUs);
+            lastClockSync = timeUs;
+        }
 
         if (written >= 0) {
             if (written > 1024) {
-                log("This package is too large: %ld, split it up. (%.2fs)", (long) written,
-                    time/1000000.0);
+                log("Package is too large: %ld, split it up. (%.2fs)", (long) written, timeUs/1E6);
                 // TODO these UDP packages are definitely too large and result in IP fragmentation
                 // most MTU's will be 1500, RTP header is 12 bytes we should
                 // split the packets up at some point(1024 seems reasonable)
@@ -86,11 +87,10 @@ void SenderSession::RunNetwork() {
         // number of these packets. In any case the client needs to mitigate this.
         // TODO auto-adjust this value based on lost packets
         // TODO figure out how to utilize throughput
-        RTPTime::Wait(RTPTime(0, timestampinc));
+        RTPTime::Wait(RTPTime(0, timestampinc/2));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
-
         // check incoming packets
         if (GotoFirstSourceWithData()) {
             do {
@@ -102,22 +102,40 @@ void SenderSession::RunNetwork() {
             } while (GotoNextSourceWithData());
         }
         EndDataAccess();
-// Without threads we have to do that for ourselves
-#ifndef RTP_SUPPORT_THREAD
-        status = Poll();
-        _checkerror(status);
-#endif // RTP_SUPPORT_THREAD
-    }
-
-    if (GotoFirstSource()) {
-        do {
-            int32_t lost = GetCurrentSourceInfo()->RR_GetPacketsLost();
-            log("Source lost %d packets", lost);
-        } while (GotoNextSource());
     }
 
     log("I'm done sending");
     BYEDestroy(RTPTime(2, 0), 0, 0);
+}
+
+void SenderSession::sendClockSync(int64_t playbackUSeconds) {
+    int64_t maxOffsetUSec = 0;
+    if (GotoFirstSource()) {
+        do {
+            int64_t offset = GetCurrentSourceInfo()->GetClockOffsetUSeconds();
+            if (maxOffsetUSec < offset) maxOffsetUSec = offset;
+        } while(GotoNextSource());
+    }
+
+    int64_t usecs = audiosync_nowUSecs();
+    audiostream_clockSync sync = {.playbackUSeconds = playbackUSeconds, .hostUSeconds = usecs};
+    SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_SYNC, AUDIOSTREAM_APP, &sync, sizeof(audiostream_clockSync));
+}
+
+void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receivetime,
+                                const RTPAddress *senderaddress) {
+    if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_OFFSET
+        && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockOffset)) {
+        audiostream_clockOffset *clock = (audiostream_clockOffset *) apppacket->GetAPPData();
+        debugLog("Received clockoffser: %.2f",clock->offsetUSeconds/1E6);
+
+        RTPSourceData *source = GetSourceInfo(apppacket->GetSSRC());
+        if (source) {
+            // Add the latency between server and client
+            clock->offsetUSeconds += audiosync_nowUSecs() - clock->timeUSeconds;
+            source->SetClockOffsetUSeconds(clock->offsetUSeconds);
+        }
+    }
 }
 
 /*void SenderSession::SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
@@ -164,7 +182,7 @@ void SenderSession::OnNewSource(jrtplib::RTPSourceData *dat) {
 
         if (this->format) {
             const char *formatString = AMediaFormat_toString(format);
-            SendRTCPAPPPacket(AUDIOSTREAM_PACKET_MEDIAFORMAT, AUDIOSTREAM_APP_NAME,
+            SendRTCPAPPPacket(AUDIOSTREAM_PACKET_MEDIAFORMAT, AUDIOSTREAM_APP,
                               (const uint8_t *) formatString, strlen(formatString));
         }
     }
@@ -192,21 +210,6 @@ void SenderSession::OnRemoveSource(jrtplib::RTPSourceData *dat) {
         DeleteDestination(*dest);
         delete(dest);
         connectedSources--;
-    }
-}
-
-void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receivetime,
-                                const RTPAddress *senderaddress) {
-    if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCKOFFSET
-        && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockOffset)) {
-        audiostream_clockOffset *clock = (audiostream_clockOffset *) apppacket->GetAPPData();
-        debugLog("Received clockoffser: %ld.%6ld", clock->offsetSeconds, clock->offetUSeconds);
-
-        RTPSourceData *source = GetSourceInfo(apppacket->GetSSRC());
-        if (source) {
-
-        }
-        // TODO
     }
 }
 
