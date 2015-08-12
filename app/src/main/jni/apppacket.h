@@ -34,11 +34,11 @@ typedef struct {
     /**
      * Time when this was send
      */
-    int64_t timeUSeconds;
+    int64_t systemTimeUs;
     /**
      * Clock offset relative to the ntp server, in microseconds.
-     * If positive, the server clock is ahead
-     * of the local clock; if negative, the server clock is behind the local clock.
+     * If positive, the server clock is ahead of the local clock;
+     * if negative, the server clock is behind the local clock.
      */
     int64_t offsetUSeconds;
 } __attribute__ ((__packed__)) audiostream_clockOffset;
@@ -46,11 +46,13 @@ typedef struct {
 #define AUDIOSTREAM_PACKET_CLOCK_SYNC 2
 // Order clients to align playback at these points
 typedef struct {
+    int64_t systemTimeUs;// When to actually play this, derived from the senders system clock
     int64_t playbackUSeconds;// The media time derived from the RTP packet timestamps
-    int64_t hostUSeconds;// When to actually play this, derived from the senders system clock
 } __attribute__ ((__packed__)) audiostream_clockSync;
 
-inline int64_t audiosync_nowUSecs();
+// a million microseconds = one second
+#define SECOND_MICRO (1000000)
+inline int64_t audiosync_systemTimeUs();
 
 #ifdef __cplusplus
 }

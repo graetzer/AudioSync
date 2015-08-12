@@ -19,7 +19,7 @@
 #include "audioplayer.h"
 #include "decoder.h"
 
-#define NTP_PACKET_INTERVAL_SEC 3
+#define NTP_PACKET_INTERVAL_SEC 2
 
 using namespace jrtplib;
 
@@ -39,16 +39,9 @@ void ReceiverSession::RunNetwork() {
 
     while (codec == NULL && isRunning) {
         log("Waiting for codec RTCP package...");
-#ifndef RTP_SUPPORT_THREAD
-        status = sess->Poll();
-        _checkerror(status);
-#endif // RTP_SUPPORT_THREAD
         RTPTime::Wait(RTPTime(1, 0));// Wait 1s
     }
-    if (codec == NULL) {
-        log("No codec set");
-        return;
-    }
+    if (!isRunning) return;
 
     // Start decoder
     status = AMediaCodec_start(codec);
@@ -121,23 +114,25 @@ void ReceiverSession::RunNetwork() {
         }
         EndDataAccess();
 
+        audioplayer_monitorPlayback();
         // We should give other threads the opportunity to run
-        RTPTime::Wait(RTPTime(0, 3000));// TODO base time on duration of received audio?
-
-#ifndef RTP_SUPPORT_THREAD
-        status = sess.Poll();
-        checkerror(status);
-#endif // RTP_SUPPORT_THREAD
+        RTPTime::Wait(RTPTime(0, 5000));// TODO base time on duration of received audio?
+        audioplayer_monitorPlayback();
     }
     log("Received all data, ending RTP session.");
     BYEDestroy(RTPTime(1, 0), 0, 0);
 
     while (hasOutput && status == AMEDIA_OK && isRunning) {
         hasOutput = decoder_dequeueBuffer(codec, &audioplayer_enqueuePCMFrames);
-        RTPTime::Wait(RTPTime(0, 2000));
+        RTPTime::Wait(RTPTime(0, 5000));
     }
     AMediaCodec_stop(codec);
     log("Finished decoding");
+
+    while(isRunning) {
+        audioplayer_monitorPlayback();
+        RTPTime::Wait(RTPTime(0, 50000));// 50ms
+    }
 }
 
 void ReceiverSession::SetFormat(AMediaFormat *newFormat) {
@@ -164,8 +159,8 @@ void ReceiverSession::SetFormat(AMediaFormat *newFormat) {
 }
 
 void ReceiverSession::SendClockOffset(int64_t offsetUSecs) {
-    audiostream_clockOffset off = {.timeUSeconds = audiosync_nowUSecs(),
-            .offsetUSeconds = offsetUSecs};
+    audiostream_clockOffset off = {.systemTimeUs = htonq(audiosync_systemTimeUs()),
+            .offsetUSeconds = htonq(offsetUSecs)};
     this->SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_OFFSET, AUDIOSTREAM_APP, &off,
                             sizeof(audiostream_clockOffset));
 }
@@ -192,7 +187,7 @@ void ReceiverSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &recei
     } else if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_SYNC
                && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockSync)) {
         audiostream_clockSync *sync = (audiostream_clockSync *) apppacket->GetAPPData();
-        audioplayer_alignPlayback(sync->playbackUSeconds, sync->hostUSeconds);
+        audioplayer_syncPlayback(ntohq(sync->playbackUSeconds), ntohq(sync->systemTimeUs));
     }
 }
 
@@ -205,6 +200,8 @@ char *_host;
 int _ntpport;
 
 void *ReceiverSession::RunNTPClient(void *ctx) {
+    static int64_t lastOffsetUs = 0;
+
     ReceiverSession *sess = (ReceiverSession *) ctx;
     while (sess->IsRunning()) {
         struct timeval tv;
@@ -212,8 +209,12 @@ void *ReceiverSession::RunNTPClient(void *ctx) {
         if (err) debugLog("NTP client error %d", err);
         else {
             int64_t offsetUSecs = tv.tv_usec + tv.tv_sec * 1000000;
+            if (lastOffsetUs != 0) offsetUSecs = (offsetUSecs + lastOffsetUs) / 2;
+            lastOffsetUs = offsetUSecs;
+
+            // Send it to everyone
             sess->SendClockOffset(offsetUSecs);
-            audioplayer_setHostTimeOffset(offsetUSecs);
+            audioplayer_setSystemTimeOffset(offsetUSecs);
         }
         RTPTime::Wait(RTPTime(NTP_PACKET_INTERVAL_SEC, 0));
     }

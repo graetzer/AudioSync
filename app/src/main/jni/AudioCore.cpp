@@ -131,8 +131,8 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startReceiving(JNIEnv *env,
  * Signature: ()V
  */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServices(JNIEnv *env, jobject thiz) {
-    audioplayer_stopPlayback();
     if (audioSession) audioSession->Stop();
+    audioplayer_stopPlayback();
 }
 
 /*

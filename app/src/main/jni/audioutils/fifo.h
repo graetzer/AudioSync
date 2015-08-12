@@ -17,12 +17,14 @@
 #ifndef ANDROID_AUDIO_FIFO_H
 #define ANDROID_AUDIO_FIFO_H
 
-#include <stdatomic.h>
+#include <atomic>
 #include <stdlib.h>
 
+/*
 #ifdef __cplusplus
 extern "C" {
-#endif
+#endif*/
+
 
 // Single writer, single reader non-blocking FIFO.
 // Writer and reader must be in same process.
@@ -35,8 +37,8 @@ struct audio_utils_fifo {
     // the end of mBuffer.  Only the indices are wasted, not any memory.
     size_t     mFrameSize;    // size of each frame in bytes
     void      *mBuffer;       // pointer to caller-allocated buffer of size mFrameCount frames
-    volatile atomic_int_least32_t mFront; // frame index of first frame slot available to read, or read index
-    volatile atomic_int_least32_t mRear;  // frame index of next frame slot available to write, or write index
+    volatile std::atomic_int_least32_t mFront; // frame index of first frame slot available to read, or read index
+    volatile std::atomic_int_least32_t mRear;  // frame index of next frame slot available to write, or write index
 };
 // Initialize a FIFO object.
 // Input parameters:
@@ -74,8 +76,9 @@ ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, void *buffer, size_
 // Return the current number of readable frames
 size_t audio_utils_fifo_available(struct audio_utils_fifo *fifo);
 
+/*
 #ifdef __cplusplus
 }
-#endif
+#endif*/
 
 #endif //ANDROID_AUDIO_FIFO_H

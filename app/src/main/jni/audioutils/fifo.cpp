@@ -25,6 +25,8 @@
     : (void)0 )
 #endif
 
+using namespace std;
+
 unsigned roundup(unsigned v) {
     // __builtin_clz is undefined for zero input
     if (v == 0) {

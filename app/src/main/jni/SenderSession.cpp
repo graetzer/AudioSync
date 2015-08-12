@@ -16,6 +16,8 @@
 #include "jrtplib/rtpipv6address.h"
 #include "jrtplib/rtpsessionparams.h"
 
+#include <sys/endian.h>
+
 #include "decoder.h"
 #include "apppacket.h"
 
@@ -48,21 +50,23 @@ void SenderSession::RunNetwork() {
     }
     if (!isRunning) return;
 
-    log("Client connected, start sending");
+    log("Client connected, starting to send in 2 seconds");
+    RTPTime(2, 0);// Let's wait for some NTP sync's
+
     ssize_t written = 0;
-    int64_t lastTime = -1, lastClockSync = 0;
+    int64_t lastTimeUs = -1, lastClockSyncUs = 0;
     while (written >= 0 && isRunning) {
         int64_t timeUs = 0;
         uint8_t buffer[8192];// TODO figure out optimum size
         written = decoder_extractData(extractor, buffer, sizeof(buffer), &timeUs);
-        if (lastTime == -1) lastTime = timeUs;// We need to calc
-        uint32_t timestampinc = (uint32_t) (timeUs - lastTime);// Assuming it will fit
-        lastTime = timeUs;
+        if (lastTimeUs == -1) lastTimeUs = timeUs;// We need to calc
+        uint32_t timestampinc = (uint32_t) (timeUs - lastTimeUs);// Assuming it will fit
+        lastTimeUs = timeUs;
 
-        //
-        if (timeUs - lastClockSync > 3000000) {
-            sendClockSync(timeUs);
-            lastClockSync = timeUs;
+        // Periodically send out clock syncs
+        if (timeUs - lastClockSyncUs > 2000000) {
+            this->sendClockSync(timeUs);
+            lastClockSyncUs = timeUs;
         }
 
         if (written >= 0) {
@@ -72,12 +76,11 @@ void SenderSession::RunNetwork() {
                 // most MTU's will be 1500, RTP header is 12 bytes we should
                 // split the packets up at some point(1024 seems reasonable)
                 //SendPacketRecursive(buffer, (size_t) written, 0, false, timestampinc);
-
-            } //else
+            }
             status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
         } else {
             buffer[0] = '\0';
-            status = SendPacket(buffer, 1, 0, true, timestampinc);
+            status = SendPacket(buffer, 1, 0, true, timestampinc);// Use marker as end of data mark
             log("Sender: End of stream.");
         }
         _checkerror(status);
@@ -87,7 +90,8 @@ void SenderSession::RunNetwork() {
         // number of these packets. In any case the client needs to mitigate this.
         // TODO auto-adjust this value based on lost packets
         // TODO figure out how to utilize throughput
-        RTPTime::Wait(RTPTime(0, timestampinc/2));
+        RTPTime::Wait(RTPTime(0, timestampinc - 1000));
+
 
         // Not really necessary, we are not using this
         BeginDataAccess();
@@ -109,16 +113,20 @@ void SenderSession::RunNetwork() {
 }
 
 void SenderSession::sendClockSync(int64_t playbackUSeconds) {
-    int64_t maxOffsetUSec = 0;
+    // Let's put playback a little in the future, because the clients will buffer data
+    // and start after this treshold was met
+    int64_t maxOffsetUSec = 3000000;
     if (GotoFirstSource()) {
-        do {
-            int64_t offset = GetCurrentSourceInfo()->GetClockOffsetUSeconds();
+        do {// Always use the largest offset, technically we can ignore positive offsets
+            // because a positive offset means the clients lags behind
+            int64_t offset = (int64_t) llabs(GetCurrentSourceInfo()->GetClockOffsetUSeconds());
             if (maxOffsetUSec < offset) maxOffsetUSec = offset;
         } while(GotoNextSource());
     }
 
-    int64_t usecs = audiosync_nowUSecs();
-    audiostream_clockSync sync = {.playbackUSeconds = playbackUSeconds, .hostUSeconds = usecs};
+    // now + maxOffset
+    int64_t usecs = audiosync_systemTimeUs() + maxOffsetUSec;
+    audiostream_clockSync sync = {.playbackUSeconds = htonq(playbackUSeconds), .systemTimeUs = htonq(usecs)};
     SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_SYNC, AUDIOSTREAM_APP, &sync, sizeof(audiostream_clockSync));
 }
 
@@ -131,9 +139,10 @@ void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receive
 
         RTPSourceData *source = GetSourceInfo(apppacket->GetSSRC());
         if (source) {
+            int64_t offsetUs = ntohq(clock->offsetUSeconds);
             // Add the latency between server and client
-            clock->offsetUSeconds += audiosync_nowUSecs() - clock->timeUSeconds;
-            source->SetClockOffsetUSeconds(clock->offsetUSeconds);
+            offsetUs += audiosync_systemTimeUs() - ntohq(clock->systemTimeUs);
+            source->SetClockOffsetUSeconds(offsetUs);
         }
     }
 }

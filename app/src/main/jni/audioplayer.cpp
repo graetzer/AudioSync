@@ -20,6 +20,9 @@
 
 #include "audioplayer.h"
 #include "audioutils/fifo.h"
+#include "apppacket.h"
+
+#include "readerwriterqueue/readerwriterqueue.h"
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
 
@@ -33,22 +36,37 @@ static SLObjectItf outputMixObject = NULL;
 static SLObjectItf playerObject = NULL;
 static SLPlayItf playerPlay;
 static SLAndroidSimpleBufferQueueItf playerBufferQueue;
-static SLVolumeItf playerVolume;
+static SLPlaybackRateItf playerPlayRate;
+//static SLVolumeItf playerVolume;
 
 // ========= Audio Params =========
 // Device parameters for playback
 static uint32_t global_samplesPerSec;
 static uint32_t global_framesPerBuffers;
 // Parameters for current audio stream
-uint32_t current_samplesPerSec = 44100;
-uint32_t current_numChannels = 1;
-int64_t current_hostTimeOffsetUs = 0;
+static uint32_t current_samplesPerSec = 44100;
+static uint32_t current_numChannels = 1;
+static bool current_isPlaying = false;
+
+// ======== Sync Variables =========
+static int64_t current_systemTimeOffsetUs = 0;
+static moodycamel::ReaderWriterQueue<audiostream_clockSync> current_syncQueue(1024);
+typedef struct {
+    size_t frameCount;
+    int64_t playbackUSeconds;// The media time derived from the RTP packet timestamps
+} _playbackMark;
+static moodycamel::ReaderWriterQueue<_playbackMark> current_playbackMarkQueue(1024);
 
 // ========= Audio Data Queue =========
 // Audio data queue
 static struct audio_utils_fifo fifo;
 static void *fifoBuffer = NULL;
-static volatile bool _playerIsStarving = true;// write / read to aligned 32bit integer is atomic
+
+// ============ Some info to interact with the callback ==============
+// write / read to aligned 32bit integer is atomic, read from network thread, write from callback
+static volatile bool current_playerIsStarving = true;
+static volatile int64_t current_playerCallOffsetUs = 0;// Time offset between two player callbacks
+static volatile size_t current_playerQueuedFrames = 0;// Bytes appended to the audio queue
 
 // =================== Helpers ===================
 static const char *_descriptionForResult(SLresult result) {
@@ -131,24 +149,22 @@ static void _createEngine() {
 }
 
 // Temporary buffer for the audio buffer queue.
-// 4096 equals 1024 frames with 2 channels with 16bit PCM format
+// 8192 equals 2048 frames with 2 channels with 16bit PCM format
 #define N_BUFFERS 4
 #define MAX_BUFFER_SIZE 8192
 uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
 uint32_t tempBuffers_ix = 0;
-
-// Ok I'm really not sure if this is a suitable idea
-struct _timeAlignment {
-    int64_t playbackUSeconds;// The media time derived from the RTP packet timestamps
-    int64_t hostUSeconds;// When to actually play this, derived from the senders system clock
-};
-#define N_ALIGNMENTS 1024
-static struct _timeAlignment alignments[N_ALIGNMENTS];
-static int alignments_ix = 0;
-
 // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
-    if (fifoBuffer == NULL || bq != playerBufferQueue) return;
+    if (fifoBuffer == NULL) {
+        debugLog("FifoBuffer should not be null");
+        return;
+    }
+    // Calculate time between last callback
+    static struct timespec lastTS = {0};
+    if (lastTS.tv_sec == 0) {// CLOCK_MONOTONIC_COARSE doesn't syscall should be fast
+        clock_gettime(CLOCK_MONOTONIC_COARSE, &lastTS);
+    }
 
     // Assuming PCM 16
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
@@ -158,16 +174,23 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     uint8_t *buf_ptr = tempBuffers + framesPerBuffer * tempBuffers_ix;
     ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
     if (frameCount > 0) {
-        _playerIsStarving = false;
+        current_playerIsStarving = false;
+        current_playerQueuedFrames += frameCount;
 
         tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
         size_t frameCountSize = frameCount * frameSize;
         SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
         _checkerror(result);
     } else {
-        _playerIsStarving = true;
+        current_playerIsStarving = true;
         debugLog("_bqPlayerCallback: Audio FiFo is empty");
     }
+
+    struct timespec nowTS;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &nowTS);
+    current_playerCallOffsetUs = (nowTS.tv_sec - lastTS.tv_sec)*100000
+                                 + (nowTS.tv_nsec - lastTS.tv_nsec)/1000;
+    lastTS = nowTS;
 }
 
 // create buffer queue audio player
@@ -197,12 +220,11 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
     SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
     SLDataSink audioSnk = {&loc_outmix, NULL};
 
-    // SL_IID_ANDROIDSIMPLEBUFFERQUEUE
     // create audio player
-    const SLInterfaceID ids[2] = {SL_IID_BUFFERQUEUE, SL_IID_VOLUME};
+    const SLInterfaceID ids[2] = {SL_IID_BUFFERQUEUE, SL_IID_PLAYBACKRATE};//SL_IID_VOLUME
     const SLboolean req[2] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE};
     result = (*engineEngine)->CreateAudioPlayer(engineEngine, &playerObject, &audioSrc, &audioSnk,
-                                                2, ids, req);
+                                                2, ids, req);// ids length, interfaces, required
     _checkerror(result);
 
     // realize the player
@@ -217,13 +239,17 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
     result = (*playerObject)->GetInterface(playerObject, SL_IID_BUFFERQUEUE, &playerBufferQueue);
     _checkerror(result);
 
+    // get playback rate interface
+    result = (*playerObject)->GetInterface(playerObject, SL_IID_PLAYBACKRATE, &playerPlayRate);
+    _checkerror(result);
+
     // register callback on the buffer queue
     result = (*playerBufferQueue)->RegisterCallback(playerBufferQueue, _bqPlayerCallback, NULL);
     _checkerror(result);
 
     // get the volume interface
-    result = (*playerObject)->GetInterface(playerObject, SL_IID_VOLUME, &playerVolume);
-    _checkerror(result);
+    //result = (*playerObject)->GetInterface(playerObject, SL_IID_VOLUME, &playerVolume);
+    //_checkerror(result);
 }
 
 void _cleanupBufferQueueAudioPlayer() {
@@ -234,7 +260,7 @@ void _cleanupBufferQueueAudioPlayer() {
         playerPlay = NULL;
         playerBufferQueue = NULL;
         //bqPlayerEffectSend = NULL;
-        playerVolume = NULL;
+        //playerVolume = NULL;
     }
 }
 
@@ -273,9 +299,7 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     fifoBuffer = realloc(fifoBuffer, frameCount * frameSize);// Is as good as malloc
     audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
 
-    _playerIsStarving = true;// Enqueue some zeros at first
-    SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
-    _checkerror(result);
+    current_playerIsStarving = true;// Enqueue some zeros at first
     debugLog("Initialized playback");
 }
 
@@ -285,41 +309,107 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
     size_t frames = pcmSize / frameSize;// Should always fit, MediaCodec uses interleaved 16 bit PCM
     ssize_t written = audio_utils_fifo_write(&fifo, pcmBuffer, frames);
 
-    // Test if the buffers are empty
-    if (_playerIsStarving && written > 0) {
+    static size_t enqueuedFrames;
+    enqueuedFrames += frames;
+    _playbackMark mark = {.frameCount = enqueuedFrames, .playbackUSeconds = playbackTimeUs};
+    current_playbackMarkQueue.enqueue(mark);
 
-        // TODO put buffering back in
-        //size_t sec5 = frameSize * current_samplesPerSec * 5;
-        //if (audio_utils_fifo_available(&fifo) > sec5) {
+    // Test if the buffers are empty
+    if (current_playerIsStarving && written > 0) {
+
+        // TODO put buffering back in, if the sender mandated 3 secs are not enough
+        // size_t sec3 = frameSize * current_samplesPerSec * 3;
+        // if (audio_utils_fifo_available(&fifo) > sec3) {
             debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
 
             _bqPlayerCallback(playerBufferQueue, NULL);
             _bqPlayerCallback(playerBufferQueue, NULL);
-            //_bqPlayerCallback(playerBufferQueue, NULL);
         //}
-    }
-    if (!_playerIsStarving && written == 0) {
+        return;
+    } else if (!current_playerIsStarving && written == 0 && pcmSize > 0 && current_isPlaying) {
         debugLog("FiFo queue seems to be full, slowing down");
         struct timespec req = {0}, rem = {0};
         req.tv_sec = (time_t) 5;// Let's sleep for a while
         nanosleep(&req, &rem);
-        // TODO if playback is stopped I could see this looping infinitely
         audioplayer_enqueuePCMFrames(pcmBuffer, pcmSize, playbackTimeUs);
     }
+    // This will start the playback
+    audioplayer_monitorPlayback();
 }
 
-void audioplayer_alignPlayback(int64_t playbackTimeUs, int64_t hostTimeUs) {
-    alignments[alignments_ix].playbackUSeconds = playbackTimeUs;
-    alignments[alignments_ix].hostUSeconds = hostTimeUs;
-    alignments_ix = (alignments_ix + 1) % N_ALIGNMENTS;
+void audioplayer_syncPlayback(int64_t playbackTimeUs, int64_t systemTimeUs) {
+    audiostream_clockSync align = {.playbackUSeconds = playbackTimeUs, .systemTimeUs = systemTimeUs};
+    current_syncQueue.enqueue(align);
+    audioplayer_monitorPlayback();
 }
 
-void audioplayer_setHostTimeOffset(int64_t offsetUs) {
-    current_hostTimeOffsetUs = offsetUs;
+void audioplayer_setSystemTimeOffset(int64_t offsetUs) {
+    current_systemTimeOffsetUs = offsetUs;
+}
+
+void audioplayer_monitorPlayback() {
+    if (current_playerIsStarving) return;
+
+    static _playbackMark mark;
+    size_t playedFrames = current_playerQueuedFrames;
+    if (mark.frameCount < playedFrames) {
+        while (current_playbackMarkQueue.peek() != NULL
+               && current_playbackMarkQueue.peek()->frameCount < playedFrames) {
+            if (!current_syncQueue.try_dequeue(mark)) break;
+        }
+    }
+    // (1000000 * current_playerQueuedFrames) / current_samplesPerSec;
+    int64_t playbackUSecs = mark.playbackUSeconds
+                            + (1000000*(playedFrames - mark.frameCount))/current_samplesPerSec;
+
+    int64_t nowUs = audiosync_systemTimeUs() + current_systemTimeOffsetUs;
+    static audiostream_clockSync sync;
+    int64_t thenUs = sync.systemTimeUs + current_systemTimeOffsetUs;
+    if (thenUs < nowUs) {
+        while (current_syncQueue.peek() != NULL
+               &&current_syncQueue.peek()->playbackUSeconds < playbackUSecs) {
+            if (!current_syncQueue.try_dequeue(sync)) break;
+        }
+    }
+
+    if (current_isPlaying) {
+        /*static struct timespec last;
+        if (last.tv_sec == 0) clock_gettime(CLOCK_MONOTONIC, &last);
+
+        static uint64_t lastPlayedCount = 0;
+        uint64_t playedFrames = _playedFrameCount - lastPlayedCount;
+        if (playedFrames == 0) return;
+        lastPlayedCount = _playedFrameCount;
+
+        struct timespec current;
+        clock_gettime(CLOCK_MONOTONIC, &current);
+        //SL_RATEPROP_NOPITCHCORAUDIO
+        int64_t diffUs = (current.tv_sec - last.tv_sec)*100000
+                            + (current.tv_nsec - last.tv_nsec)/1000;*/
+
+    } else {
+        // Call start at the right time
+        // Let's start when we meet the 5ms threshold
+        if (thenUs - nowUs < 5000) {
+            int64_t playDiff = sync.playbackUSeconds - playbackUSecs;
+            if (playDiff > 0) {// Drop frames, you're late
+                debugLog("We drop initial frames, you're late");
+                int64_t dropFrames = (playDiff * current_samplesPerSec)/1000000;
+                uint8_t buffer[dropFrames];
+                audio_utils_fifo_read(&fifo, buffer, (size_t)dropFrames);
+            }
+
+            current_isPlaying = true;
+            SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
+            _checkerror(result);
+            debugLog("Started playback late / early %.4fs", (thenUs - nowUs)/1E6);
+        }
+    }
 }
 
 void audioplayer_stopPlayback() {
     if (playerPlay) {
+        current_isPlaying = false;
         SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_STOPPED);
         _checkerror(result);
         debugLog("Stopped playback");
@@ -327,12 +417,12 @@ void audioplayer_stopPlayback() {
 
     // Cleanup audio-player so we can use different parameters
     _cleanupBufferQueueAudioPlayer();
-    audio_utils_fifo_deinit(&fifo);
+    audio_utils_fifo_deinit(&fifo);// noop
 }
 
 // shut down the native audio system
 void audioplayer_cleanup() {
-    _cleanupBufferQueueAudioPlayer();
+    audioplayer_stopPlayback();
 
     // destroy output mix object, and invalidate all associated interfaces
     if (outputMixObject != NULL) {

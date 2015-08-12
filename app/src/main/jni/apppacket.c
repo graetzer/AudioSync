@@ -73,7 +73,7 @@ mf.setByteBuffer("csd-0", bb);
      * */
 }
 
-int64_t audiosync_nowUSecs() {
+int64_t audiosync_systemTimeUs() {
     struct timespec ts;
     int err = clock_gettime(CLOCK_REALTIME, &ts);
     if (err) return 0;

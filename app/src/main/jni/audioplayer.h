@@ -33,12 +33,14 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int6
  * @param playbackTimeUs  The precise time at which to match playback of the audio-stream.
  * @param hostTimeUs      The host time at which to synchronize playback.
  */
-void audioplayer_alignPlayback(int64_t playbackTimeUs, int64_t hostTimeUs);
+void audioplayer_syncPlayback(int64_t playbackTimeUs, int64_t systemTimeUs);
 /**
  * If positive, the server clock is ahead of the local clock;
  * if negative, the server clock is behind the local clock.
  */
-void audioplayer_setHostTimeOffset(int64_t offsetUs);
+void audioplayer_setSystemTimeOffset(int64_t offsetUs);
+// Call this regulary if you don't call any other methods here regulary instead
+void audioplayer_monitorPlayback();
 /**
  * Stop playback
  */
