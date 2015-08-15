@@ -10,13 +10,15 @@ import android.widget.Toast;
 
 import java.util.Random;
 
+import de.rwth_aachen.comsys.audiosync.ui.BaseActivity;
 
-public class MainActivity extends Activity implements MainActivityFragment.ICallbacks {
+
+public class MainActivity extends BaseActivity implements MainActivityFragment.ICallbacks {
     private AudioCore mAudioCore;
     private NsdHelper mNSDHelper;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mAudioCore = new AudioCore(this);
@@ -27,6 +29,8 @@ public class MainActivity extends Activity implements MainActivityFragment.ICall
         if (frag instanceof MainActivityFragment) {
             ((MainActivityFragment)frag).setAudioCore(mAudioCore);
         }
+
+        initializeToolbar();
     }
 
     @Override
@@ -58,7 +62,7 @@ public class MainActivity extends Activity implements MainActivityFragment.ICall
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         super.onPause();
         mNSDHelper.unregisterService();
         mAudioCore.stopPlaying();

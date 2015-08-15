@@ -19,7 +19,7 @@ import java.util.Arrays;
 public class MainActivityFragment extends Fragment {
     private ICallbacks mCallbacks;
     private TextView mStatusTV;
-    private Button mListenButton, mSendButton;
+    private Button mListenButton;
 
     public MainActivityFragment() {
     }
@@ -35,7 +35,7 @@ public class MainActivityFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
         mStatusTV = (TextView) view.findViewById(R.id.textView_status);
         mListenButton = (Button) view.findViewById(R.id.button_listen);
-        mSendButton = (Button) view.findViewById(R.id.button_send);
+       /* mSendButton = (Button) view.findViewById(R.id.button_send);
         mSendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -44,14 +44,13 @@ public class MainActivityFragment extends Fragment {
                 mSendButton.setEnabled(false);
                 mCallbacks.startSending();
             }
-        });
+        });*/
 
         mListenButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 mStatusTV.setText("Listening");
                 mListenButton.setEnabled(false);
-                mSendButton.setEnabled(false);
                 mCallbacks.startListening();
             }
         });
@@ -73,7 +72,12 @@ public class MainActivityFragment extends Fragment {
     final ArrayList<AudioDestination> rtpSourceList = new ArrayList<AudioDestination>();
 
     public void updateStats() {
-        while(!getActivity().isDestroyed()) {
+        while(true) {
+            Activity activity = getActivity();
+
+            if(activity == null || activity.isDestroyed())
+                break;
+
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException ex) {
@@ -88,23 +92,14 @@ public class MainActivityFragment extends Fragment {
                 }
             }
 
-            /*for (int i = 0; i < mAudioCore.getRtpSourceCount(); ++i) {
-                AudioDestination source = new AudioDestination();
-
-                source.name = mAudioCore.getRtpSourceName(i);
-                source.jitter = mAudioCore.getRtpSourceJitter(i);
-                source.timeOffset = mAudioCore.getRtpSourceTimeOffset(i);
-                source.packetsLost = mAudioCore.getRtpSourcePacketsLost(i);
-
-                rtpSourceList.add(source);
-            }*/
-
-            this.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    rtpSourceListAdapter.notifyDataSetChanged();
-                }
-            });
+            if(this.getActivity() != null) {
+                this.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        rtpSourceListAdapter.notifyDataSetChanged();
+                    }
+                });
+            }
         }
     }
 
@@ -127,7 +122,7 @@ public class MainActivityFragment extends Fragment {
 
     public void resetUI() {
         mStatusTV.setText("Select an action");
-        mSendButton.setEnabled(true);
+        //mSendButton.setEnabled(true);
         mListenButton.setEnabled(true);
     }
 }

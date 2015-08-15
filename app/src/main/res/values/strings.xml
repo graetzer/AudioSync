@@ -44,7 +44,7 @@
     <string name="close_content_drawer">Close the main menu</string>
     <string name="placeholder_message">This is a placeholder for your application code.</string>
     <string name="drawer_allmusic_title">All Music</string>
-    <string name="drawer_playlists_title">Playlists</string>
+    <string name="drawer_statistics_title">Listen mode</string>
     <string name="now_playing">Now Playing</string>
     <string name="background_image_str">Background image for album art</string>
     <string name="no_search_results">No search results.</string>

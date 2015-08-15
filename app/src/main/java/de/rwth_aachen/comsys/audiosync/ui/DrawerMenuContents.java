@@ -39,8 +39,8 @@ public class DrawerMenuContents {
         items.add(populateDrawerItem(ctx.getString(R.string.drawer_allmusic_title),
             R.drawable.ic_allmusic_black_24dp));
 
-        activities[1] = PlaceholderActivity.class;
-        items.add(populateDrawerItem(ctx.getString(R.string.drawer_playlists_title),
+        activities[1] = de.rwth_aachen.comsys.audiosync.MainActivity.class;
+        items.add(populateDrawerItem(ctx.getString(R.string.drawer_statistics_title),
             R.drawable.ic_playlist_music_black_24dp));
     }
 
