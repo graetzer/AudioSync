@@ -43,9 +43,6 @@ import de.rwth_aachen.comsys.audiosync.utils.LogHelper;
 import de.rwth_aachen.comsys.audiosync.utils.MediaIDHelper;
 import de.rwth_aachen.comsys.audiosync.utils.QueueHelper;
 import de.rwth_aachen.comsys.audiosync.utils.WearHelper;
-import com.google.android.gms.cast.ApplicationMetadata;
-import com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager;
-import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumerImpl;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -122,12 +119,15 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
     // The key in the extras of the incoming Intent indicating the command that
     // should be executed (see {@link #onStartCommand})
     public static final String CMD_NAME = "CMD_NAME";
-    // A value of a CMD_NAME key in the extras of the incoming Intent that
+    // A value of a CMD_PAUSE key in the extras of the incoming Intent that
     // indicates that the music playback should be paused (see {@link #onStartCommand})
     public static final String CMD_PAUSE = "CMD_PAUSE";
-    // A value of a CMD_NAME key that indicates that the music playback should switch
+    // A value of a CMD_STOP_CASTING key that indicates that the music playback should switch
     // to local playback from cast playback.
     public static final String CMD_STOP_CASTING = "CMD_STOP_CASTING";
+    // A value of a CMD_START_CASTING key that indicates that the music playback should switch
+    // to cast playback from local playback.
+    public static final String CMD_START_CASTING = "CMD_START_CASTING";
 
     private static final String TAG = LogHelper.makeLogTag(MusicService.class);
     // Action to thumbs up a media item
@@ -151,35 +151,26 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
     private PackageValidator mPackageValidator;
 
     /**
-     * Consumer responsible for switching the Playback instances depending on whether
+     * responsible for switching the Playback instances depending on whether
      * it is connected to a remote player.
      */
-    private final VideoCastConsumerImpl mCastConsumer = new VideoCastConsumerImpl() {
+    private void startRemotePlayback() {
+        mSessionExtras.putString(EXTRA_CONNECTED_CAST, "Streaming devices");
+        mSession.setExtras(mSessionExtras);
+        // Now we can switch to CastPlayback
+        Playback playback = new CastPlayback(mMusicProvider);
+        mMediaRouter.setMediaSession(mSession);
+        switchToPlayer(playback, true);
+    }
 
-        @Override
-        public void onApplicationConnected(ApplicationMetadata appMetadata, String sessionId,
-                                           boolean wasLaunched) {
-            // In case we are casting, send the device name as an extra on MediaSession metadata.
-            mSessionExtras.putString(EXTRA_CONNECTED_CAST, mCastManager.getDeviceName());
-            mSession.setExtras(mSessionExtras);
-            // Now we can switch to CastPlayback
-            Playback playback = new CastPlayback(mMusicProvider);
-            mMediaRouter.setMediaSession(mSession);
-            switchToPlayer(playback, true);
-        }
-
-        @Override
-        public void onDisconnected() {
-            LogHelper.d(TAG, "onDisconnected");
-            mSessionExtras.remove(EXTRA_CONNECTED_CAST);
-            mSession.setExtras(mSessionExtras);
-            Playback playback = new LocalPlayback(MusicService.this, mMusicProvider);
-            mMediaRouter.setMediaSession(null);
-            switchToPlayer(playback, false);
-        }
-    };
-
-    private VideoCastManager mCastManager;
+    private void stopRemotePlayback() {
+        LogHelper.d(TAG, "stopRemotePlayback");
+        mSessionExtras.remove(EXTRA_CONNECTED_CAST);
+        mSession.setExtras(mSessionExtras);
+        Playback playback = new LocalPlayback(MusicService.this, mMusicProvider);
+        mMediaRouter.setMediaSession(null);
+        switchToPlayer(playback, false);
+    }
 
     /*
      * (non-Javadoc)
@@ -221,8 +212,6 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         updatePlaybackState(null);
 
         mMediaNotificationManager = new MediaNotificationManager(this);
-        mCastManager = VideoCastManager.getInstance();
-        mCastManager.addVideoCastConsumer(mCastConsumer);
         mMediaRouter = MediaRouter.getInstance(getApplicationContext());
     }
 
@@ -241,7 +230,9 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
                         handlePauseRequest();
                     }
                 } else if (CMD_STOP_CASTING.equals(command)) {
-                    mCastManager.disconnect();
+                    stopRemotePlayback();
+                } else if (CMD_START_CASTING.equals(command)) {
+                    startRemotePlayback();
                 }
             }
         }
@@ -262,8 +253,7 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         // Service is being killed, so make sure we release our resources
         handleStopRequest(null);
 
-        mCastManager = VideoCastManager.getInstance();
-        mCastManager.removeVideoCastConsumer(mCastConsumer);
+        stopRemotePlayback();
 
         mDelayedStopHandler.removeCallbacksAndMessages(null);
         // Always release the MediaSession to clean up resources

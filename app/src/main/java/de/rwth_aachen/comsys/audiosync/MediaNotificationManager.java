@@ -53,6 +53,7 @@ public class MediaNotificationManager extends BroadcastReceiver {
     public static final String ACTION_PREV = "de.rwth_aachen.comsys.audiosync.prev";
     public static final String ACTION_NEXT = "de.rwth_aachen.comsys.audiosync.next";
     public static final String ACTION_STOP_CASTING = "de.rwth_aachen.comsys.audiosync.stop_cast";
+    public static final String ACTION_SET_PLAY_METHOD = "de.rwth_aachen.comsys.audiosync.set_play_method";
 
     private final MusicService mService;
     private MediaSession.Token mSessionToken;
