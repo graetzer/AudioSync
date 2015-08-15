@@ -28,7 +28,7 @@ bool startsWith(const char *pre, const char *str) {
             lenstr = strlen(str);
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
 }
-
+/*
 ssize_t _decodeTrack(AMediaExtractor *extractor, AMediaFormat *format, uint8_t **pcmOut,
                      int32_t *sampleRate, int32_t *numChannels) {
     size_t pcmOutLength = INITIAL_BUFFER;
@@ -146,7 +146,7 @@ struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t fileSize
         AMediaFormat_delete(format);
     }
     return result;
-}
+}*/
 
 
 // ========================== Helper functions for streaming extracting ==========================

@@ -25,7 +25,7 @@ more than is defined by POSIX, unfortunately.  Systems that do not have the
 #ifdef __ANDROID__
 #include <android/log.h>
 int adjtime(const struct timeval *delta, struct timeval *olddelta) {
-    __android_log_print(ANDROID_LOG_DEBUG, "libsmntp", "You can't use adjtime on android");
+    //__android_log_print(ANDROID_LOG_DEBUG, "libsmntp", "You can't use adjtime on android");
 }
 #endif
 

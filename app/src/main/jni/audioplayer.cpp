@@ -349,7 +349,8 @@ void audioplayer_monitorPlayback() {
     static _playbackMark mark;
     size_t playedFrames = current_playerQueuedFrames;
     if (mark.frameCount < playedFrames) {
-        while (current_playbackMarkQueue.peek()->frameCount < playedFrames) {
+        while (current_playbackMarkQueue.peek() != NULL
+               && current_playbackMarkQueue.peek()->frameCount < playedFrames) {
             if (!current_playbackMarkQueue.try_dequeue(mark)) break;
         }
     }
@@ -360,7 +361,8 @@ void audioplayer_monitorPlayback() {
 
     static audiostream_clockSync sync;
     if (sync.playbackUSeconds < playbackUSecs) {
-        while (current_syncQueue.peek()->playbackUSeconds < playbackUSecs) {
+        while (current_syncQueue.peek() != NULL
+               && current_syncQueue.peek()->playbackUSeconds < playbackUSecs) {
             if (!current_syncQueue.try_dequeue(sync)) break;
         }
     }
@@ -374,7 +376,7 @@ void audioplayer_monitorPlayback() {
             return;
         }
 
-        if (playedFrames - lastMark.frameCount > 30 * current_samplesPerSec * SECOND_MICRO) {
+        if (playedFrames - lastMark.frameCount > 30 * current_samplesPerSec / SECOND_MICRO) {
             int64_t monoNow = audiosync_monotonicTimeUs();
             int64_t localInterval = monoNow - lastMono;
             // - mark.playbackUSeconds
@@ -387,20 +389,6 @@ void audioplayer_monitorPlayback() {
             lastMark = mark;
             lastMono = monoNow;
         }
-
-        /*static struct timespec last;
-        if (last.tv_sec == 0) clock_gettime(CLOCK_MONOTONIC, &last);
-
-        static uint64_t lastPlayedCount = 0;
-        uint64_t playedFrames = _playedFrameCount - lastPlayedCount;
-        if (playedFrames == 0) return;
-        lastPlayedCount = _playedFrameCount;
-
-        struct timespec current;
-        clock_gettime(CLOCK_MONOTONIC, &current);
-        //SL_RATEPROP_NOPITCHCORAUDIO
-        int64_t diffUs = (current.tv_sec - last.tv_sec)*100000
-                            + (current.tv_nsec - last.tv_nsec)/1000;*/
 
     } else {
         int64_t nowUs = audiosync_systemTimeUs() + current_systemTimeOffsetUs;
@@ -420,7 +408,7 @@ void audioplayer_monitorPlayback() {
             current_isPlaying = true;
             SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
             _checkerror(result);
-            debugLog("Started playback late / early %.4fs", (thenUs - nowUs)/1E6);
+            debugLog("Started playback late / early %ld", thenUs - nowUs);
         }
     }
 }

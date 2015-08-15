@@ -64,7 +64,7 @@ void SenderSession::RunNetwork() {
         lastTimeUs = timeUs;
 
         // Periodically send out clock syncs
-        if (timeUs - lastClockSyncUs > 2000000) {
+        if (timeUs - lastClockSyncUs > SECOND_MICRO) {
             this->sendClockSync(timeUs);
             lastClockSyncUs = timeUs;
         }
@@ -143,7 +143,7 @@ void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receive
         if (source) {
             int64_t offsetUs = ntohq(clock->offsetUSeconds);
             // Add the latency between server and client
-            offsetUs += audiosync_systemTimeUs() - ntohq(clock->systemTimeUs);
+            //offsetUs += audiosync_systemTimeUs() - ntohq(clock->systemTimeUs);
             source->SetClockOffsetUSeconds(offsetUs);
         }
     }

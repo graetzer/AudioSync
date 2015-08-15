@@ -31,7 +31,7 @@ struct decoder_audio {
 /*
  * Not needed currently, for testing playback only
 */
-struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t length);
+//struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t length);
 
 // ========================== Helper functions for streaming extracting ==========================
 

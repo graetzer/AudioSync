@@ -131,7 +131,7 @@ void ReceiverSession::RunNetwork() {
 
     while(isRunning) {
         audioplayer_monitorPlayback();
-        RTPTime::Wait(RTPTime(0, 50000));// 50ms
+        RTPTime::Wait(RTPTime(0, 50000));// 10ms
     }
 }
 
@@ -208,7 +208,7 @@ void *ReceiverSession::RunNTPClient(void *ctx) {
         int err = msntp_get_offset(_host, _ntpport, &tv);
         if (err) debugLog("NTP client error %d", err);
         else {
-            int64_t offsetUSecs = tv.tv_usec + tv.tv_sec * 1000000;
+            int64_t offsetUSecs = tv.tv_usec + tv.tv_sec * SECOND_MICRO;
             if (lastOffsetUs != 0) offsetUSecs = (offsetUSecs + lastOffsetUs) / 2;
             lastOffsetUs = offsetUSecs;
 
