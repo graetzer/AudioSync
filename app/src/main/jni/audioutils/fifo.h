@@ -37,8 +37,8 @@ struct audio_utils_fifo {
     // the end of mBuffer.  Only the indices are wasted, not any memory.
     size_t     mFrameSize;    // size of each frame in bytes
     void      *mBuffer;       // pointer to caller-allocated buffer of size mFrameCount frames
-    volatile std::atomic_int_least32_t mFront; // frame index of first frame slot available to read, or read index
-    volatile std::atomic_int_least32_t mRear;  // frame index of next frame slot available to write, or write index
+    volatile std::atomic<int_least32_t> mFront; // frame index of first frame slot available to read, or read index
+    volatile std::atomic<int_least32_t> mRear;  // frame index of next frame slot available to write, or write index
 };
 // Initialize a FIFO object.
 // Input parameters:

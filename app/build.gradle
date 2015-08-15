@@ -32,7 +32,7 @@ model {
         moduleName = "AudioCore"
         //  -pedantic  even the android headers show warnings with that
         // -Wshadow
-        CFlags += ["-std=c99", "-pthread", "-Wall", "-Wextra", "-DHAVE_CONFIG_H"]
+        CFlags += ["-std=c11", "-pthread", "-Wall", "-Wextra", "-DHAVE_CONFIG_H"]
         cppFlags += ["-std=c++11", "-Wall", "-Wextra", "-DHAVE_CONFIG_H", "-fexceptions"]
         stl = "gnustl_static" // supports atomics
         ldLibs += ["android", "OpenSLES", "mediandk", "log"]

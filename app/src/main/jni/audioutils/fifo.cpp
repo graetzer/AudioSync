@@ -95,7 +95,7 @@ static inline size_t audio_utils_fifo_diff(struct audio_utils_fifo *fifo, int32_
 }
 ssize_t audio_utils_fifo_write(struct audio_utils_fifo *fifo, const void *buffer, size_t count)
 {
-    int32_t front = atomic_load_explicit(&fifo->mFront, memory_order_acquire);
+    int32_t front = atomic_load_explicit(&fifo->mFront, memory_order::memory_order_acquire);
     int32_t rear = fifo->mRear;
     size_t availToWrite = fifo->mFrameCount - audio_utils_fifo_diff(fifo, rear, front);
     if (availToWrite > count) {
@@ -116,13 +116,13 @@ ssize_t audio_utils_fifo_write(struct audio_utils_fifo *fifo, const void *buffer
         }
         atomic_store_explicit(&fifo->mRear,
                               audio_utils_fifo_sum(fifo, fifo->mRear, availToWrite),
-                              memory_order_release);
+                              std::memory_order_release);
     }
     return availToWrite;
 }
 ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, void *buffer, size_t count)
 {
-    int32_t rear = atomic_load_explicit(&fifo->mRear, memory_order_acquire);
+    int32_t rear = atomic_load_explicit(&fifo->mRear, memory_order::memory_order_acquire);
     int32_t front = fifo->mFront;
     size_t availToRead = audio_utils_fifo_diff(fifo, rear, front);
     if (availToRead > count) {
@@ -143,7 +143,7 @@ ssize_t audio_utils_fifo_read(struct audio_utils_fifo *fifo, void *buffer, size_
         }
         atomic_store_explicit(&fifo->mFront,
                               audio_utils_fifo_sum(fifo, fifo->mFront, availToRead),
-                              memory_order_release);
+                              memory_order::memory_order_release);
     }
     return availToRead;
 }

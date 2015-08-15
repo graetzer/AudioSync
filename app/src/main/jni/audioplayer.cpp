@@ -320,9 +320,10 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
         return;
     } else if (!current_playerIsStarving && written == 0 && pcmSize > 0 && current_isPlaying) {
         debugLog("FiFo queue seems to be full, slowing down");
-        struct timespec req = {0}, rem = {0};
+        struct timespec req;
         req.tv_sec = (time_t) 5;// Let's sleep for a while
-        nanosleep(&req, &rem);
+        req.tv_nsec = 0;
+        nanosleep(&req, NULL);
         audioplayer_enqueuePCMFrames(pcmBuffer, pcmSize, playbackTimeUs);
     }
     // This will start the playback
@@ -330,8 +331,11 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
 }
 
 void audioplayer_syncPlayback(int64_t playbackTimeUs, int64_t systemTimeUs) {
-    audiostream_clockSync align = {.playbackUSeconds = playbackTimeUs, .systemTimeUs = systemTimeUs};
+    audiostream_clockSync align;
+    align.playbackUSeconds = playbackTimeUs;
+    align.systemTimeUs = systemTimeUs;
     current_syncQueue.enqueue(align);
+    // Process this
     audioplayer_monitorPlayback();
 }
 
@@ -363,7 +367,7 @@ void audioplayer_monitorPlayback() {
 
     if (current_isPlaying) {
         static int64_t lastMono = 0;
-        static _playbackMark lastMark = {0};
+        static _playbackMark lastMark;
         if (lastMark.frameCount == 0) {
             lastMark = mark;
             lastMono = audiosync_monotonicTimeUs();

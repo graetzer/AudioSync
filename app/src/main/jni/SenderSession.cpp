@@ -126,7 +126,9 @@ void SenderSession::sendClockSync(int64_t playbackUSeconds) {
 
     // now + maxOffset
     int64_t usecs = audiosync_systemTimeUs() + maxOffsetUSec;
-    audiostream_clockSync sync = {.playbackUSeconds = htonq(playbackUSeconds), .systemTimeUs = htonq(usecs)};
+    audiostream_clockSync sync;
+    sync.playbackUSeconds = htonq(playbackUSeconds);
+    sync.systemTimeUs = htonq(usecs);
     SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_SYNC, AUDIOSTREAM_APP, &sync, sizeof(audiostream_clockSync));
 }
 
