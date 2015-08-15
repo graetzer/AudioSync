@@ -20,28 +20,38 @@ public class PlaybackModeActionProvider extends android.support.v4.view.ActionPr
         mContext = context;
     }
 
-    private boolean playLocal = true;
+    private static boolean playLocal = false;
 
     public View onCreateActionView() {
         return null;
     }
 
     private MenuItem mItem;
+    boolean iconSet = false;
 
     @Override
     public View onCreateActionView(MenuItem context) {
         mItem = context;
+        if(!iconSet) {
+            updateIcon();
+            iconSet = true;
+        }
         return null;
+    }
+
+    private void updateIcon()
+    {
+        if(playLocal)
+            mItem.setIcon(R.drawable.playmode_local);
+        else
+            mItem.setIcon(R.drawable.playmode_stream);
     }
 
     @Override
     public boolean onPerformDefaultAction ()
     {
         playLocal = !playLocal;
-        if(playLocal)
-            mItem.setIcon(R.drawable.playmode_local);
-        else
-            mItem.setIcon(R.drawable.playmode_stream);
+        updateIcon();
         return true;
     }
 }
