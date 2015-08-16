@@ -158,7 +158,7 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         mSessionExtras.putString(EXTRA_CONNECTED_CAST, "Streaming devices");
         mSession.setExtras(mSessionExtras);
         // Now we can switch to CastPlayback
-        Playback playback = new CastPlayback(mMusicProvider);
+        Playback playback = new CastPlayback(mMusicProvider, this.getApplicationContext());
         mMediaRouter.setMediaSession(mSession);
         switchToPlayer(playback, true);
     }
@@ -172,6 +172,9 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         switchToPlayer(playback, false);
     }
 
+    public static AudioCore mAudioCore;
+    public static NsdHelper mNSDHelper;
+
     /*
      * (non-Javadoc)
      * @see android.app.Service#onCreate()
@@ -184,6 +187,10 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         mPlayingQueue = new ArrayList<>();
         mMusicProvider = new MusicProvider();
         mPackageValidator = new PackageValidator(this);
+
+        mAudioCore = new AudioCore(this);
+        mNSDHelper = new NsdHelper(this);
+        mNSDHelper.initializeNsd();
 
         // Start a new MediaSession
         mSession = new MediaSession(this, "MusicService");
@@ -250,6 +257,8 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
     @Override
     public void onDestroy() {
         LogHelper.d(TAG, "onDestroy");
+
+        mAudioCore.cleanup();
         // Service is being killed, so make sure we release our resources
         handleStopRequest(null);
 

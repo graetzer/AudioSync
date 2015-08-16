@@ -2,6 +2,7 @@ package de.rwth_aachen.comsys.audiosync;
 
 import android.app.Activity;
 import android.app.Fragment;
+import android.content.Intent;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Bundle;
 import android.view.Menu;
@@ -21,9 +22,14 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        mAudioCore = new AudioCore(this);
-        mNSDHelper = new NsdHelper(this);
-        mNSDHelper.initializeNsd();
+
+        Intent i = new Intent(this.getApplicationContext(), MusicService.class);
+        i.setAction(MusicService.ACTION_CMD);
+        i.putExtra(MusicService.CMD_NAME, MusicService.CMD_STOP_CASTING);
+        startService(i);
+
+        mAudioCore = MusicService.mAudioCore;
+        mNSDHelper = MusicService.mNSDHelper;
 
         Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);
         if (frag instanceof MainActivityFragment) {
@@ -36,7 +42,6 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        mAudioCore.cleanup();
     }
 
     @Override
