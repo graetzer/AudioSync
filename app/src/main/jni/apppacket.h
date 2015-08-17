@@ -47,11 +47,11 @@ typedef struct {
 // Order clients to align playback at these points
 typedef struct {
     int64_t systemTimeUs;// When to actually play this, derived from the senders system clock
-    int64_t playbackUSeconds;// The media time derived from the RTP packet timestamps
+    int64_t playbackTimeUs;// The media time derived from the RTP packet timestamps
 } __attribute__ ((__packed__)) audiostream_clockSync;
 
 // a million microseconds = one second
-#define SECOND_MICRO (1000000)
+#define SECOND_MICRO ((int64_t)1000000)
 int64_t audiosync_systemTimeUs();
 int64_t audiosync_monotonicTimeUs();
 

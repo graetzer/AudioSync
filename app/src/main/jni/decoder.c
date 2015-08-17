@@ -192,7 +192,7 @@ ssize_t decoder_extractData(AMediaExtractor *extractor, uint8_t *buffer, size_t 
 
 // ============================ Helper functions for streaming data ============================
 
-int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize, int64_t time) {
+int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize, int64_t timestamp) {
     ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(codec, 5000);// 5ms decoding time
     if (bufIdx >= 0) {
         size_t capacity;
@@ -200,21 +200,21 @@ int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize,
         int status;
         if (inSize < 0) {
             debugLog("input EOS");
-            status = AMediaCodec_queueInputBuffer(codec, (size_t) bufIdx, 0, 0, (uint64_t) time,
+            status = AMediaCodec_queueInputBuffer(codec, (size_t) bufIdx, 0, 0, (uint64_t) timestamp,
                                                   AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
         } else {
             if (capacity < inSize) {
                 debugLog("Capacity is too low, I need to break it up");
                 memcpy(buffer, inBuffer, capacity);
                 status = AMediaCodec_queueInputBuffer(codec, (size_t) bufIdx, 0,
-                                                      capacity, (uint64_t) time, 0);
+                                                      capacity, (uint64_t) timestamp, 0);
                 if (status != AMEDIA_OK) return status;
                 // Recursevly call this until we are done
-                status = decoder_enqueueBuffer(codec, buffer + capacity, inSize - capacity, time);
+                status = decoder_enqueueBuffer(codec, buffer + capacity, inSize - capacity, timestamp);
             } else {
                 memcpy(buffer, inBuffer, (size_t) inSize);
                 status = AMediaCodec_queueInputBuffer(codec, (size_t) bufIdx, 0,
-                                                      (uint64_t) inSize, (uint64_t) time, 0);
+                                                      (uint64_t) inSize, (uint64_t) timestamp, 0);
             }
         }
         if (status != AMEDIA_OK) return status;
@@ -227,13 +227,15 @@ int decoder_enqueueBuffer(AMediaCodec *codec, uint8_t *inBuffer, ssize_t inSize,
 bool decoder_dequeueBuffer(AMediaCodec *codec,
                            void (*sinkFunc)(const uint8_t *pcmBuffer, size_t pcmSize,
                                             int64_t playbackTime)) {
-    AMediaCodecBufferInfo info = {0};
+    AMediaCodecBufferInfo info;
     ssize_t bufIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);// 5ms decoding time
     if (bufIdx >= 0) {
         if (info.size > 0) {
             uint8_t *pcmBuffer = AMediaCodec_getOutputBuffer(codec, (size_t) bufIdx, NULL);
             sinkFunc(pcmBuffer + info.offset, (size_t) info.size, info.presentationTimeUs);
-            //debugLog("Written %d", info.size);
+        }
+        if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
+            debugLog("Decoder EOS");
         }
         int status = AMediaCodec_releaseOutputBuffer(codec, (size_t) bufIdx, false);
         if (status != AMEDIA_OK) return false;

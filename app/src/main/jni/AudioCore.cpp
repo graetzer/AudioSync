@@ -166,7 +166,7 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
 
             jrtplib::RTPSourceData *sourceData = audioSession->GetCurrentSourceInfo();
             size_t nameLen = 0;
-            uint8_t *nameChars = sourceData->SDES_GetCNAME(&nameLen);
+            uint8_t *nameChars = sourceData->SDES_GetName(&nameLen);
             char chars[256] = {0};
             memcpy(chars, nameChars, nameLen);
 

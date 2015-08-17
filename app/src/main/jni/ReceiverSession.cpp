@@ -18,6 +18,7 @@
 #include "apppacket.h"
 #include "audioplayer.h"
 #include "decoder.h"
+#include <cinttypes>
 
 #define NTP_PACKET_INTERVAL_SEC 2
 
@@ -74,10 +75,9 @@ void ReceiverSession::RunNetwork() {
                     }
                     timestamp -= beginTimestamp;
                     // Handle lost packets, TODO How does this work with multiple senders?
-                    if (pack->GetSequenceNumber() == lastSeqNum + 1) {
+                    if (pack->GetSequenceNumber() != lastSeqNum + 1) {
                         // TODO handle mutliple packages with same timestamp. (Decode together?)
                         /*if (timestamp == lastTimestamp)*/
-                    } else {
                         log("Packets jumped %u => %u | %.2f => %.2fs.", lastSeqNum,
                             pack->GetSequenceNumber(), lastTimestamp / 1E6,
                             timestamp / 1E6);
@@ -99,12 +99,12 @@ void ReceiverSession::RunNetwork() {
                         //log("Received %.2f", timestamp / 1000000.0);
                         uint8_t *payload = pack->GetPayloadData();
                         size_t length = pack->GetPayloadLength();
-                        status = decoder_enqueueBuffer(codec, payload, length, (int64_t) time);
+                        status = decoder_enqueueBuffer(codec, payload, length, (int64_t) timestamp);
                         if (status != AMEDIA_OK) hasInput = false;
                     } else {
                         log("Receiver: End of file");
                         // Tell the codec we are done
-                        decoder_enqueueBuffer(codec, NULL, -1, (int64_t) time);
+                        decoder_enqueueBuffer(codec, NULL, -1, (int64_t) timestamp);
                     }
                     hasOutput = decoder_dequeueBuffer(codec, &audioplayer_enqueuePCMFrames);
 
@@ -116,7 +116,7 @@ void ReceiverSession::RunNetwork() {
 
         audioplayer_monitorPlayback();
         // We should give other threads the opportunity to run
-        RTPTime::Wait(RTPTime(0, 5000));// TODO base time on duration of received audio?
+        RTPTime::Wait(RTPTime(0, 2500));// TODO base time on duration of received audio?
         audioplayer_monitorPlayback();
     }
     log("Received all data, ending RTP session.");
@@ -186,8 +186,11 @@ void ReceiverSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &recei
         }
     } else if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_SYNC
                && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockSync)) {
+
         audiostream_clockSync *sync = (audiostream_clockSync *) apppacket->GetAPPData();
-        audioplayer_syncPlayback(ntohq(sync->playbackUSeconds), ntohq(sync->systemTimeUs));
+        int64_t systemTimeUs = ntohq(sync->systemTimeUs);
+        int64_t playbackTimeUs = ntohq(sync->playbackTimeUs);
+        audioplayer_syncPlayback(systemTimeUs, playbackTimeUs);
     }
 }
 

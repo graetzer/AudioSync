@@ -16,10 +16,11 @@
 #include "jrtplib/rtpipv6address.h"
 #include "jrtplib/rtpsessionparams.h"
 
-#include <sys/endian.h>
+#include <cinttypes>
 
 #include "decoder.h"
 #include "apppacket.h"
+
 
 #define PACKET_GAP_MICRO 2000
 using namespace jrtplib;
@@ -37,11 +38,6 @@ void SenderSession::RunNetwork() {
         log("No datasource");
         return;
     }
-    /*if (format == NULL) {
-        int idx = AMediaExtractor_getSampleTrackIndex(extractor);// If this returns -1, we crash
-        format = AMediaExtractor_getTrackFormat(extractor, (size_t)idx);
-        debugLog("")
-    }*/
 
     int status = 0;
     while (connectedSources == 0 && isRunning) {
@@ -51,7 +47,12 @@ void SenderSession::RunNetwork() {
     if (!isRunning) return;
 
     log("Client connected, starting to send in 2 seconds");
-    RTPTime(2, 0);// Let's wait for some NTP sync's
+    RTPTime::Wait(RTPTime(2, 0));// Let's wait for some NTP sync's
+
+    // Send out the initial clock sync, the decoder time
+    // equals the presentation time of the last byte
+    this->sendClockSync(0);
+    RTPTime::Wait(RTPTime(0, 5000));
 
     ssize_t written = 0;
     int64_t lastTimeUs = -1, lastClockSyncUs = 0;
@@ -64,9 +65,10 @@ void SenderSession::RunNetwork() {
         lastTimeUs = timeUs;
 
         // Periodically send out clock syncs
-        if (timeUs - lastClockSyncUs > SECOND_MICRO) {
+        if (timeUs - lastClockSyncUs > SECOND_MICRO/2) {
             this->sendClockSync(timeUs);
             lastClockSyncUs = timeUs;
+            RTPTime::Wait(RTPTime(0, 1000));// Give the clients the chance to process this first
         }
 
         if (written >= 0) {
@@ -85,13 +87,10 @@ void SenderSession::RunNetwork() {
         }
         _checkerror(status);
 
-        // Don't decrease the waiting time too much, it seems sending a great number
-        // of packets very fast, will cause the network (or the client) to drop a high
-        // number of these packets. In any case the client needs to mitigate this.
-        // TODO auto-adjust this value based on lost packets
-        // TODO figure out how to utilize throughput
-        RTPTime::Wait(RTPTime(0, timestampinc - 1000));
-
+        // Don't decrease the waiting time too much, sending a great number of packets very fast,
+        // will cause the network (or the client) to drop a high number of these packets.
+        // TODO auto-adjust this value based on lost packets, figure out how to utilize throughput
+        RTPTime::Wait(RTPTime(0, timestampinc - 3000));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
@@ -115,7 +114,7 @@ void SenderSession::RunNetwork() {
 void SenderSession::sendClockSync(int64_t playbackUSeconds) {
     // Let's put playback a little in the future, because the clients will buffer data
     // and start after this treshold was met
-    int64_t maxOffsetUSec = 3000000;
+    int64_t maxOffsetUSec = 3 * SECOND_MICRO;
     if (GotoFirstSource()) {
         do {// Always use the largest offset, technically we can ignore positive offsets
             // because a positive offset means the clients lags behind
@@ -127,8 +126,8 @@ void SenderSession::sendClockSync(int64_t playbackUSeconds) {
     // now + maxOffset
     int64_t usecs = audiosync_systemTimeUs() + maxOffsetUSec;
     audiostream_clockSync sync;
-    sync.playbackUSeconds = htonq(playbackUSeconds);
     sync.systemTimeUs = htonq(usecs);
+    sync.playbackTimeUs = htonq(playbackUSeconds);
     SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_SYNC, AUDIOSTREAM_APP, &sync, sizeof(audiostream_clockSync));
 }
 
@@ -137,11 +136,11 @@ void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receive
     if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_OFFSET
         && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockOffset)) {
         audiostream_clockOffset *clock = (audiostream_clockOffset *) apppacket->GetAPPData();
-        debugLog("Received clockoffser: %.2f",clock->offsetUSeconds/1E6);
-
         RTPSourceData *source = GetSourceInfo(apppacket->GetSSRC());
         if (source) {
+
             int64_t offsetUs = ntohq(clock->offsetUSeconds);
+            debugLog("Received clockoffset: %fs", offsetUs/1E6);
             // Add the latency between server and client
             //offsetUs += audiosync_systemTimeUs() - ntohq(clock->systemTimeUs);
             source->SetClockOffsetUSeconds(offsetUs);
@@ -262,6 +261,7 @@ SenderSession * SenderSession::StartStreaming(uint16_t portbase, AMediaExtractor
     _checkerror(status);
 
     sess->SetDefaultMark(false);
+    sess->SetLocalName("Sender", 6);
     sess->extractor = extractor;
     pthread_create(&(sess->networkThread), NULL, &(SenderSession::RunNetworkThread), sess);
     pthread_create(&sess->ntpThread, NULL, &SenderSession::RunNTPServer, sess);

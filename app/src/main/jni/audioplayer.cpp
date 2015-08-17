@@ -22,9 +22,8 @@
 #include "audioutils/fifo.h"
 #include "apppacket.h"
 
-#include "readerwriterqueue/readerwriterqueue.h"
-
-using namespace std;
+#include <queue>
+#include <cinttypes>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
 
@@ -52,12 +51,12 @@ static bool current_isPlaying = false;
 
 // ======== Sync Variables =========
 static int64_t current_systemTimeOffsetUs = 0;
-static moodycamel::ReaderWriterQueue<audiostream_clockSync> current_syncQueue(1024);
+static std::queue<audiostream_clockSync> current_syncQueue;
 typedef struct {
     size_t frameCount;
-    int64_t playbackUSeconds;// The media time derived from the RTP packet timestamps
+    int64_t playbackTimeUs;// The media time derived from the RTP packet timestamps
 } _playbackMark;
-static moodycamel::ReaderWriterQueue<_playbackMark> current_playbackMarkQueue(1024);
+static std::queue<_playbackMark> current_playbackMarkQueue;
 
 // ========= Audio Data Queue =========
 // Audio data queue
@@ -270,6 +269,9 @@ void audioplayer_initGlobal(uint32_t samplesPerSec, uint32_t framesPerBuffer) {
     debugLog("Initialized AudioPlayer");
 }
 
+// TODO maybe rename these
+static _playbackMark mark;
+static audiostream_clockSync sync;
 void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     debugLog("Audio Sample Rate: %u; Channels: %u", samplesPerSec, numChannels);
 
@@ -290,21 +292,37 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     fifoBuffer = realloc(fifoBuffer, frameCount * frameSize);// Is as good as malloc
     audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
 
+    // Reset our entire state
     current_playerIsStarving = true;// Enqueue some zeros at first
+    current_playerQueuedFrames = 0;
+    current_isPlaying = false;// reset our state
+    memset(&mark, 0, sizeof(_playbackMark));
+    memset(&sync, 0, sizeof(audiostream_clockSync));
+    // Empty queues
+    if (current_playbackMarkQueue.size() > 0) {
+        std::queue<_playbackMark> empty;
+        std::swap(current_playbackMarkQueue, empty);
+    }
+    if (current_syncQueue.size() > 0) {
+        std::queue<audiostream_clockSync> empty;
+        std::swap(current_syncQueue, empty);
+    }
     debugLog("Initialized playback");
 }
 
-void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
-                                  int64_t playbackTimeUs) {
-    static size_t enqueuedFrames = 0;
+void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int64_t playbackTimeUs) {
+    static size_t enqueuedFrames;
 
     size_t frameSize = current_numChannels * sizeof(uint16_t);
     size_t frames = pcmSize / frameSize;// Should always fit, MediaCodec uses interleaved 16 bit PCM
     ssize_t written = audio_utils_fifo_write(&fifo, pcmBuffer, frames);
-
     enqueuedFrames += frames;
-    _playbackMark mark = {.frameCount = enqueuedFrames, .playbackUSeconds = playbackTimeUs};
-    current_playbackMarkQueue.enqueue(mark);
+
+    _playbackMark mark;
+    mark.frameCount = enqueuedFrames;
+    mark.playbackTimeUs = playbackTimeUs;
+    current_playbackMarkQueue.push(mark);
+    //debugLog("Enqueued frames: %lu. Time: %lld", enqueuedFrames, (long long)playbackTimeUs);
 
     // Test if the buffers are empty
     if (current_playerIsStarving && written > 0) {
@@ -312,7 +330,7 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
         // TODO put buffering back in, if the sender mandated 3 secs are not enough
         // size_t sec3 = frameSize * current_samplesPerSec * 3;
         // if (audio_utils_fifo_available(&fifo) > sec3) {
-            debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
+            //debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
 
             _bqPlayerCallback(playerBufferQueue, NULL);
             _bqPlayerCallback(playerBufferQueue, NULL);
@@ -330,12 +348,12 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize,
     audioplayer_monitorPlayback();
 }
 
-void audioplayer_syncPlayback(int64_t playbackTimeUs, int64_t systemTimeUs) {
-    audiostream_clockSync align;
-    align.playbackUSeconds = playbackTimeUs;
-    align.systemTimeUs = systemTimeUs;
-    current_syncQueue.enqueue(align);
-    // Process this
+void audioplayer_syncPlayback(int64_t systemTimeUs, int64_t playbackTimeUs) {
+    audiostream_clockSync sync;
+    sync.systemTimeUs = systemTimeUs;
+    sync.playbackTimeUs = playbackTimeUs;
+    current_syncQueue.push(sync);
+    //debugLog("Adding Sync: System time %lld. PlaybackTime: %lld", (long long)systemTimeUs, (long long)playbackTimeUs);
     audioplayer_monitorPlayback();
 }
 
@@ -346,45 +364,49 @@ void audioplayer_setSystemTimeOffset(int64_t offsetUs) {
 void audioplayer_monitorPlayback() {
     if (current_playerIsStarving) return;
 
-    static _playbackMark mark;
     size_t playedFrames = current_playerQueuedFrames;
     if (mark.frameCount < playedFrames) {
-        while (current_playbackMarkQueue.peek() != NULL
-               && current_playbackMarkQueue.peek()->frameCount < playedFrames) {
-            if (!current_playbackMarkQueue.try_dequeue(mark)) break;
+        while (!current_playbackMarkQueue.empty()
+               && current_playbackMarkQueue.front().frameCount <= playedFrames) {
+            mark = current_playbackMarkQueue.front();
+            current_playbackMarkQueue.pop();
         }
-    }
-    // (1000000 * current_playerQueuedFrames) / current_samplesPerSec;
-    // Since we won't call this at the right moment, adjust the actual playback time
-    int64_t playbackUSecs = mark.playbackUSeconds
-                            + (SECOND_MICRO*(playedFrames - mark.frameCount))/current_samplesPerSec;
-
-    static audiostream_clockSync sync;
-    if (sync.playbackUSeconds < playbackUSecs) {
-        while (current_syncQueue.peek() != NULL
-               && current_syncQueue.peek()->playbackUSeconds < playbackUSecs) {
-            if (!current_syncQueue.try_dequeue(sync)) break;
-        }
+        // Since we won't call this at the exact right moment, adjust the actual playback time
+        mark.playbackTimeUs += (SECOND_MICRO*(playedFrames - mark.frameCount))/current_samplesPerSec;
+        mark.frameCount = playedFrames;
     }
 
-    if (current_isPlaying) {
-        static int64_t lastMono = 0;
-        static _playbackMark lastMark;
-        if (lastMark.frameCount == 0) {
-            lastMark = mark;
-            lastMono = audiosync_monotonicTimeUs();
+    if (sync.playbackTimeUs < mark.playbackTimeUs || playedFrames == 0) {
+        while (!current_syncQueue.empty()
+               && current_syncQueue.front().playbackTimeUs <= mark.playbackTimeUs) {
+            sync = current_syncQueue.front();
+            current_syncQueue.pop();
+        }
+        // Workaround to force waiting
+        if (sync.systemTimeUs == 0) {
             return;
         }
+        sync.systemTimeUs += current_systemTimeOffsetUs + (mark.playbackTimeUs - sync.playbackTimeUs);
+        sync.playbackTimeUs = mark.playbackTimeUs;
+    }
 
-        if (playedFrames - lastMark.frameCount > 30 * current_samplesPerSec / SECOND_MICRO) {
+    //debugLog("Mark: Sample %lu Presentation Time: %"PRId64, mark.frameCount, mark.playbackTimeUs);
+    //debugLog("Sync: System time %"PRId64". Presentation Time: %"PRId64, sync.systemTimeUs, sync.playbackTimeUs);
+    //debugLog("Actual played: %lu", playedFrames);
+
+    static int64_t lastMono;
+    static _playbackMark lastMark;
+    if (current_isPlaying) {
+
+        if (playedFrames - lastMark.frameCount > 15 * current_samplesPerSec) {
             int64_t monoNow = audiosync_monotonicTimeUs();
             int64_t localInterval = monoNow - lastMono;
-            // - mark.playbackUSeconds
-            int64_t referenceInterval = lastMark.playbackUSeconds - playbackUSecs;
+            // - mark.playbackTimeUs
+            int64_t referenceInterval = mark.playbackTimeUs - lastMark.playbackTimeUs;
             double skew = (double)localInterval / (double)referenceInterval;
 
-            debugLog("Skew %f", skew);
-            // TODO somehow maary this with the playback time
+            debugLog("Skew %lf", skew);
+            // TODO somehow marry this with the playback time
 
             lastMark = mark;
             lastMono = monoNow;
@@ -392,11 +414,11 @@ void audioplayer_monitorPlayback() {
 
     } else {
         int64_t nowUs = audiosync_systemTimeUs() + current_systemTimeOffsetUs;
-        int64_t thenUs = sync.systemTimeUs + current_systemTimeOffsetUs;
-        // Call start at the right time
-        // Let's start when we meet the 5ms threshold
-        if (thenUs - nowUs < 5000) {
-            /*int64_t playDiff = sync.playbackUSeconds - playbackUSecs;
+        //debugLog("%"PRId64" - %"PRId64" = %"PRId64, sync.systemTimeUs, nowUs, sync.systemTimeUs - nowUs);
+        // Call start at the right time, when we meet the threshold
+        // TODO use define, same as RTPTime::Wait in the loop in ReceiverSession::RunNetwork()
+        if (sync.systemTimeUs - nowUs < 2500) {
+            /*int64_t playDiff = sync.playbackTimeUs - playbackTimeUs;
             if (playDiff > 0) {// Drop frames, you're late
                 debugLog("We drop initial frames, you're late");
                 int64_t dropFrames = (playDiff * current_samplesPerSec)/SECOND_MICRO;
@@ -405,17 +427,21 @@ void audioplayer_monitorPlayback() {
                 current_playerQueuedFrames += dropFrames;
             }*/
 
+            // Initialize properly
+            lastMark = mark;
+            lastMono = audiosync_monotonicTimeUs();
             current_isPlaying = true;
+
             SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
             _checkerror(result);
-            debugLog("Started playback late / early %ld", thenUs - nowUs);
+            debugLog("Started playback late / early %"PRId64, sync.systemTimeUs - nowUs);
         }
     }
 }
 
 void audioplayer_stopPlayback() {
+    current_isPlaying = false;
     if (playerPlay) {
-        current_isPlaying = false;
         SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_STOPPED);
         _checkerror(result);
         debugLog("Stopped playback");
