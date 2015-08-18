@@ -173,23 +173,12 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
 
     if (!current_isPlaying) {// Don't actually starve the buffer, just keep it running
-
-        memset(buf_ptr, 1, frameCountSize);
+        memset(buf_ptr, 1, frameCountSize);// for some reason 0 doesn't work
         SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
         _checkerror(result);
-
         return;
     }
 
-    /*for (size_t i = 0; i < frameCountSize; i += frameSize) {
-        int val = (int) i;
-        buf_ptr[i] = (val & 0x00ff);
-        buf_ptr[i+1] = (val & 0xff00) >> 8;
-        buf_ptr[i+2] = (val & 0x00ff);
-        buf_ptr[i+3] = (val & 0xff00) >> 8;
-    }
-    SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
-    _checkerror(result);*/
 
     // Now we can start playing
     ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
