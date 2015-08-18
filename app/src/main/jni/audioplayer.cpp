@@ -38,6 +38,7 @@ static SLObjectItf playerObject = NULL;
 static SLPlayItf playerPlay;
 static SLAndroidSimpleBufferQueueItf playerBufferQueue;
 static SLPlaybackRateItf playerPlayRate;
+
 //static SLVolumeItf playerVolume;
 
 // ========= Audio Params =========
@@ -48,6 +49,9 @@ static uint32_t global_framesPerBuffers;
 static uint32_t current_samplesPerSec = 44100;
 static uint32_t current_numChannels = 1;
 static bool current_isPlaying = false;
+// Playback rate default
+static uint32_t current_defaultRatePromille = 1000;
+static uint32_t current_ratePromille = 1000;
 
 // ======== Sync Variables =========
 static int64_t current_systemTimeOffsetUs = 0;
@@ -137,10 +141,7 @@ static void _createEngine() {
     result = (*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &engineEngine);
     _checkerror(result);
 
-    // create output mix, with environmental reverb specified as a non-required interface
-    const SLInterfaceID ids[1] = {SL_IID_ENVIRONMENTALREVERB};
-    const SLboolean req[1] = {SL_BOOLEAN_FALSE};
-    result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 1, ids, req);
+    result = (*engineEngine)->CreateOutputMix(engineEngine, &outputMixObject, 0, NULL, NULL);
     _checkerror(result);
     (void) result;
 
@@ -166,15 +167,23 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
     // global_framesPerBuffers is the max amount of frames we read
     size_t frameSize = current_numChannels * sizeof(uint16_t); // 16 bit PCM data
-    size_t framesPerBuffer = global_framesPerBuffers * frameSize;
-    uint8_t *buf_ptr = tempBuffers + framesPerBuffer * tempBuffers_ix;
+    size_t frameCountSize = global_framesPerBuffers * frameSize;
+    uint8_t *buf_ptr = tempBuffers + frameCountSize * tempBuffers_ix;
+    tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
+
+    if (!current_isPlaying) {// Don't actually starve the buffer, just keep it running
+        memset(buf_ptr, 0, frameCountSize);
+        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
+        _checkerror(result);
+        return;
+    }
+    // Now we can start playing
     ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
     if (frameCount > 0) {
         current_playerIsStarving = false;
         current_playerQueuedFrames += frameCount;
 
-        tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
-        size_t frameCountSize = frameCount * frameSize;
+        frameCountSize = frameCount * frameSize;
         SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
         _checkerror(result);
     } else {
@@ -194,7 +203,8 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
     }
 
     // configure audio source
-    SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+    SLDataLocator_AndroidSimpleBufferQueue bufferQueue = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
+                                                          2};
     SLDataFormat_PCM format_pcm = {
             .formatType = SL_DATAFORMAT_PCM,
             .numChannels = numChannels,
@@ -204,7 +214,7 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
             .channelMask = channelMask,
             .endianness = SL_BYTEORDER_LITTLEENDIAN// TODO: compute real endianness
     };
-    SLDataSource audioSrc = {&loc_bufq, &format_pcm};
+    SLDataSource audioSrc = {&bufferQueue, &format_pcm};
 
     // configure audio sink
     SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
@@ -274,28 +284,14 @@ static _playbackMark mark;
 static audiostream_clockSync sync;
 void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     debugLog("Audio Sample Rate: %u; Channels: %u", samplesPerSec, numChannels);
-
-    current_samplesPerSec = samplesPerSec;
-    current_numChannels = numChannels;
-    // TODO maybe resample, figure out if correct. 
-    // https://android.googlesource.com/platform/system/media/+/master/audio_utils/resampler.c
-    _createBufferQueueAudioPlayer(current_samplesPerSec, current_numChannels);
-    if (global_samplesPerSec != current_samplesPerSec) {
-        // Will probably result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
-        debugLog("Global:%d != Current: %d", global_samplesPerSec, current_samplesPerSec);
-    }
-
-    // Initialize the audio buffer queue
-    // TODO figure out how to buffer more data? (maybe realloc buffer) Currently: nanosleep
-    size_t frameCount = current_samplesPerSec * 60 * 5;// 5 minutes buffer
-    size_t frameSize = current_numChannels * sizeof(uint16_t);
-    fifoBuffer = realloc(fifoBuffer, frameCount * frameSize);// Is as good as malloc
-    audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
-
     // Reset our entire state
+    current_samplesPerSec = global_samplesPerSec;//samplesPerSec;
+    current_numChannels = numChannels;
     current_playerIsStarving = true;// Enqueue some zeros at first
     current_playerQueuedFrames = 0;
-    current_isPlaying = false;// reset our state
+    current_isPlaying = false;
+    current_defaultRatePromille = 1000;
+    current_ratePromille = 1000;
     memset(&mark, 0, sizeof(_playbackMark));
     memset(&sync, 0, sizeof(audiostream_clockSync));
     // Empty queues
@@ -307,6 +303,30 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
         std::queue<audiostream_clockSync> empty;
         std::swap(current_syncQueue, empty);
     }
+
+    _createBufferQueueAudioPlayer(current_samplesPerSec, current_numChannels);
+    // Always use optimal rate, resample by slowing down playback
+    if (global_samplesPerSec != samplesPerSec) {
+        // Will probably result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
+        debugLog("Global:%d != Current: %d", global_samplesPerSec, samplesPerSec);
+
+        current_defaultRatePromille = (1000 * samplesPerSec)/global_samplesPerSec;
+        current_ratePromille = current_defaultRatePromille;
+        debugLog("El cheapo resampling, slow down to %"PRId32, current_ratePromille);
+        (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePromille);
+    }
+
+    // Initialize the audio buffer queue
+    // TODO figure out how to buffer more data? (maybe realloc buffer) Currently: nanosleep
+    size_t frameCount = current_samplesPerSec * 60 * 5;// 5 minutes buffer
+    size_t frameSize = current_numChannels * sizeof(uint16_t);
+    fifoBuffer = realloc(fifoBuffer, frameCount * frameSize);// Is as good as malloc
+    audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
+
+    _bqPlayerCallback(playerBufferQueue, NULL);
+    // This call has latency, we need to keep the audio system starving to perform start / pause
+    SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
+    _checkerror(result);
     debugLog("Initialized playback");
 }
 
@@ -322,21 +342,14 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int6
     mark.frameCount = enqueuedFrames;
     mark.playbackTimeUs = playbackTimeUs;
     current_playbackMarkQueue.push(mark);
-    //debugLog("Enqueued frames: %lu. Time: %lld", enqueuedFrames, (long long)playbackTimeUs);
+    //debugLog("Enqueued Time: %"PRId64, playbackTimeUs);
 
-    // Test if the buffers are empty
-    if (current_playerIsStarving && written > 0) {
-
-        // TODO put buffering back in, if the sender mandated 3 secs are not enough
-        // size_t sec3 = frameSize * current_samplesPerSec * 3;
-        // if (audio_utils_fifo_available(&fifo) > sec3) {
-            //debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
-
-            _bqPlayerCallback(playerBufferQueue, NULL);
-            _bqPlayerCallback(playerBufferQueue, NULL);
-        //}
-        return;
-    } else if (!current_playerIsStarving && written == 0 && pcmSize > 0 && current_isPlaying) {
+//    // Test if the buffers are empty
+//    if (current_playerIsStarving && current_isPlaying && written > 0) {
+//        //debugLog("initial enqueue, buffer was empty. Gonna enqueue to kickstart playback");
+//        _bqPlayerCallback(playerBufferQueue, NULL);
+//    } else
+    if (!current_playerIsStarving && written == 0 && pcmSize > 0 && current_isPlaying) {
         debugLog("FiFo queue seems to be full, slowing down");
         struct timespec req;
         req.tv_sec = (time_t) 5;// Let's sleep for a while
@@ -353,7 +366,7 @@ void audioplayer_syncPlayback(int64_t systemTimeUs, int64_t playbackTimeUs) {
     sync.systemTimeUs = systemTimeUs;
     sync.playbackTimeUs = playbackTimeUs;
     current_syncQueue.push(sync);
-    //debugLog("Adding Sync: System time %lld. PlaybackTime: %lld", (long long)systemTimeUs, (long long)playbackTimeUs);
+    //debugLog("Adding Sync: System time %"PRId64". PlaybackTime: %"PRId64, systemTimeUs, playbackTimeUs);
     audioplayer_monitorPlayback();
 }
 
@@ -362,9 +375,10 @@ void audioplayer_setSystemTimeOffset(int64_t offsetUs) {
 }
 
 void audioplayer_monitorPlayback() {
-    if (current_playerIsStarving) return;
 
     size_t playedFrames = current_playerQueuedFrames;
+
+    int64_t nowUs = audiosync_systemTimeUs() + current_systemTimeOffsetUs;
     if (mark.frameCount < playedFrames) {
         while (!current_playbackMarkQueue.empty()
                && current_playbackMarkQueue.front().frameCount <= playedFrames) {
@@ -376,17 +390,17 @@ void audioplayer_monitorPlayback() {
         mark.frameCount = playedFrames;
     }
 
-    if (sync.playbackTimeUs < mark.playbackTimeUs || playedFrames == 0) {
+    if (sync.playbackTimeUs < mark.playbackTimeUs || sync.systemTimeUs == 0) {// == 0 => first call
         while (!current_syncQueue.empty()
                && current_syncQueue.front().playbackTimeUs <= mark.playbackTimeUs) {
             sync = current_syncQueue.front();
             current_syncQueue.pop();
+            sync.systemTimeUs += current_systemTimeOffsetUs;
         }
-        // Workaround to force waiting
-        if (sync.systemTimeUs == 0) {
-            return;
-        }
-        sync.systemTimeUs += current_systemTimeOffsetUs + (mark.playbackTimeUs - sync.playbackTimeUs);
+        // Workaround to force waiting, in case we didn't receive a sync packet yet
+        if (sync.systemTimeUs == 0) return;
+
+        sync.systemTimeUs += (mark.playbackTimeUs - sync.playbackTimeUs);
         sync.playbackTimeUs = mark.playbackTimeUs;
     }
 
@@ -394,30 +408,27 @@ void audioplayer_monitorPlayback() {
     //debugLog("Sync: System time %"PRId64". Presentation Time: %"PRId64, sync.systemTimeUs, sync.playbackTimeUs);
     //debugLog("Actual played: %lu", playedFrames);
 
-    static int64_t lastMono;
     static _playbackMark lastMark;
+    static int64_t lastDiff;
     if (current_isPlaying) {
 
-        if (playedFrames - lastMark.frameCount > 15 * current_samplesPerSec) {
-            int64_t monoNow = audiosync_monotonicTimeUs();
-            int64_t localInterval = monoNow - lastMono;
-            // - mark.playbackTimeUs
-            int64_t referenceInterval = mark.playbackTimeUs - lastMark.playbackTimeUs;
-            double skew = (double)localInterval / (double)referenceInterval;
+        int64_t waitSec = 10;
+        if (playedFrames - lastMark.frameCount > waitSec * current_samplesPerSec) {
 
-            debugLog("Skew %lf", skew);
+            int64_t diff = nowUs - sync.systemTimeUs;
+            double skew = (double)(diff-lastDiff) / (waitSec * 1000000.0);
+            debugLog("Accumulated diff: %fs, Speed: %f", diff/1E6, skew + 1.0);
             // TODO somehow marry this with the playback time
 
             lastMark = mark;
-            lastMono = monoNow;
+            lastDiff = diff;
         }
 
     } else {
-        int64_t nowUs = audiosync_systemTimeUs() + current_systemTimeOffsetUs;
         //debugLog("%"PRId64" - %"PRId64" = %"PRId64, sync.systemTimeUs, nowUs, sync.systemTimeUs - nowUs);
         // Call start at the right time, when we meet the threshold
         // TODO use define, same as RTPTime::Wait in the loop in ReceiverSession::RunNetwork()
-        if (sync.systemTimeUs - nowUs < 2500) {
+        if (sync.systemTimeUs - nowUs < 1000) {
             /*int64_t playDiff = sync.playbackTimeUs - playbackTimeUs;
             if (playDiff > 0) {// Drop frames, you're late
                 debugLog("We drop initial frames, you're late");
@@ -427,20 +438,17 @@ void audioplayer_monitorPlayback() {
                 current_playerQueuedFrames += dropFrames;
             }*/
 
-            // Initialize properly
+            // Initialize measurments properly
             lastMark = mark;
-            lastMono = audiosync_monotonicTimeUs();
-            current_isPlaying = true;
+            lastDiff = 0;
 
-            SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
-            _checkerror(result);
+            current_isPlaying = true;
             debugLog("Started playback late / early %"PRId64, sync.systemTimeUs - nowUs);
         }
     }
 }
 
 void audioplayer_stopPlayback() {
-    current_isPlaying = false;
     if (playerPlay) {
         SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_STOPPED);
         _checkerror(result);

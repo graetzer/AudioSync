@@ -64,6 +64,6 @@ protected:
 //            In this case, we'll be sending 1000 samples each second, so we'll
 //            put the timestamp unit to (1.0/1000.0)
 // AMediaExtractor uses microseconds too, so we can transport the correct playback time
-#define AUDIOSYNC_TIMESTAMP_UNITS (1.0 / 1000.0)
+#define AUDIOSYNC_TIMESTAMP_UNITS (1.0 / 48000.0)
 
 #endif

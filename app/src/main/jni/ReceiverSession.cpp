@@ -114,9 +114,12 @@ void ReceiverSession::RunNetwork() {
         }
         EndDataAccess();
 
+        struct timespec req;
+        req.tv_sec = 0;
+        req.tv_nsec = 1000*1000;
         audioplayer_monitorPlayback();
         // We should give other threads the opportunity to run
-        RTPTime::Wait(RTPTime(0, 2500));// TODO base time on duration of received audio?
+        nanosleep(&req, NULL);// TODO base time on duration of received audio?
         audioplayer_monitorPlayback();
     }
     log("Received all data, ending RTP session.");
@@ -218,6 +221,7 @@ void *ReceiverSession::RunNTPClient(void *ctx) {
             // Send it to everyone
             sess->SendClockOffset(offsetUSecs);
             audioplayer_setSystemTimeOffset(offsetUSecs);
+            debugLog("My clock offset is %"PRId64, offsetUSecs);
         }
         RTPTime::Wait(RTPTime(NTP_PACKET_INTERVAL_SEC, 0));
     }

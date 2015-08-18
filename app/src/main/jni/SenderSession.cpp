@@ -90,7 +90,8 @@ void SenderSession::RunNetwork() {
         // Don't decrease the waiting time too much, sending a great number of packets very fast,
         // will cause the network (or the client) to drop a high number of these packets.
         // TODO auto-adjust this value based on lost packets, figure out how to utilize throughput
-        RTPTime::Wait(RTPTime(0, timestampinc - 3000));
+        uint32_t waitUs = timestampinc > 5000 ? timestampinc - 5000 : 5000;
+        RTPTime::Wait(RTPTime(0, waitUs));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
@@ -115,16 +116,21 @@ void SenderSession::sendClockSync(int64_t playbackUSeconds) {
     // Let's put playback a little in the future, because the clients will buffer data
     // and start after this treshold was met
     int64_t maxOffsetUSec = 3 * SECOND_MICRO;
-    if (GotoFirstSource()) {
+    // TODO replace with latency search, it doesn't matter how much the clocks diverge
+    /*if (GotoFirstSource()) {
         do {// Always use the largest offset, technically we can ignore positive offsets
             // because a positive offset means the clients lags behind
             int64_t offset = (int64_t) llabs(GetCurrentSourceInfo()->GetClockOffsetUSeconds());
             if (maxOffsetUSec < offset) maxOffsetUSec = offset;
         } while(GotoNextSource());
+    }*/
+
+    static int64_t initialSync;
+    if (playbackUSeconds == 0) {
+        initialSync = audiosync_systemTimeUs() + maxOffsetUSec;// now + maxOffset
     }
 
-    // now + maxOffset
-    int64_t usecs = audiosync_systemTimeUs() + maxOffsetUSec;
+    int64_t usecs = initialSync + playbackUSeconds;
     audiostream_clockSync sync;
     sync.systemTimeUs = htonq(usecs);
     sync.playbackTimeUs = htonq(playbackUSeconds);
