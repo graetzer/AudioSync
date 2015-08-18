@@ -2,6 +2,7 @@ package de.rwth_aachen.comsys.audiosync;
 
 import android.app.Activity;
 import android.app.Fragment;
+import android.content.Intent;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Bundle;
 import android.view.Menu;
@@ -10,55 +11,41 @@ import android.widget.Toast;
 
 import java.util.Random;
 
+import de.rwth_aachen.comsys.audiosync.ui.BaseActivity;
 
-public class MainActivity extends Activity implements MainActivityFragment.ICallbacks {
+
+public class MainActivity extends BaseActivity implements MainActivityFragment.ICallbacks {
     private AudioCore mAudioCore;
     private NsdHelper mNSDHelper;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        mAudioCore = new AudioCore(this);
-        mNSDHelper = new NsdHelper(this);
-        mNSDHelper.initializeNsd();
+
+        Intent i = new Intent(this.getApplicationContext(), MusicService.class);
+        i.setAction(MusicService.ACTION_CMD);
+        i.putExtra(MusicService.CMD_NAME, MusicService.CMD_STOP_CASTING);
+        startService(i);
+
+        mAudioCore = MusicService.mAudioCore;
+        mNSDHelper = MusicService.mNSDHelper;
 
         Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);
         if (frag instanceof MainActivityFragment) {
             ((MainActivityFragment)frag).setAudioCore(mAudioCore);
         }
+
+        initializeToolbar();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        mAudioCore.cleanup();
     }
 
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
-    }
-
-    @Override
-    protected void onPause() {
+    public void onPause() {
         super.onPause();
         mNSDHelper.unregisterService();
         mAudioCore.stopPlaying();

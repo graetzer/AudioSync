@@ -30,17 +30,12 @@ public class AudioCore {
         mAssetManager = ctx.getAssets();
     }
 
-    public void startPlaying(int portbase) {
-        startStreaming(portbase, mAssetManager, "background.mp3");
-        //startStreaming(portbase, mAssetManager, "mandelsson.mp3");
-        /*Thread t = new Thread() {
-            @Override
-            public void run() {
-                Log.d("AudioCore", "Started AudioCore thread");
+    public void startPlaying(int portbase, String path) {
+        startStreaming(portbase, mAssetManager, path);
+    }
 
-            }
-        };
-        t.start();*/
+    public void startPlaying(int portbase) {
+        startPlaying(portbase, "background.mp3");
     }
 
     public void cleanup() {
@@ -61,6 +56,13 @@ public class AudioCore {
             }
         };
         t.start();
+
+        try {
+            t.join();
+        }
+        catch(InterruptedException ex)
+        {
+        }
     }
 
     private native void initAudio(int samplesPerSec, int framesPerBuffer);
