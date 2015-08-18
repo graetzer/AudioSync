@@ -24,6 +24,7 @@
 
 #include <queue>
 #include <cinttypes>
+#include <cmath>
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
 
@@ -152,7 +153,7 @@ static void _createEngine() {
 
 // Temporary buffer for the audio buffer queue.
 // 8192 equals 2048 frames with 2 channels with 16bit PCM format
-#define N_BUFFERS 4
+#define N_BUFFERS 3
 #define MAX_BUFFER_SIZE 8192
 uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
 uint32_t tempBuffers_ix = 0;
@@ -172,13 +173,29 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
 
     if (!current_isPlaying) {// Don't actually starve the buffer, just keep it running
-        memset(buf_ptr, 0, frameCountSize);
+
+        memset(buf_ptr, 1, frameCountSize);
         SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
         _checkerror(result);
+
         return;
     }
+
+    /*for (size_t i = 0; i < frameCountSize; i += frameSize) {
+        int val = (int) i;
+        buf_ptr[i] = (val & 0x00ff);
+        buf_ptr[i+1] = (val & 0xff00) >> 8;
+        buf_ptr[i+2] = (val & 0x00ff);
+        buf_ptr[i+3] = (val & 0xff00) >> 8;
+    }
+    SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
+    _checkerror(result);*/
+
     // Now we can start playing
     ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
+    if (current_playerQueuedFrames == 0) {
+
+    }
     if (frameCount > 0) {
         current_playerIsStarving = false;
         current_playerQueuedFrames += frameCount;
