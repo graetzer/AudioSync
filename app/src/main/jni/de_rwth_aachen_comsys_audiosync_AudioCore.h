@@ -25,11 +25,19 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAud
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    startStreaming
+ * Method:    startStreamingAsset
  * Signature: (ILandroid/content/res/AssetManager;Ljava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreamingAsset
   (JNIEnv *, jobject, jint, jobject, jstring);
+
+/*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    startStreamingUri
+ * Signature: (ILjava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreamingUri
+        (JNIEnv *, jobject, jint, jstring);
 
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
@@ -54,6 +62,18 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServi
  */
 JNIEXPORT jobjectArray JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestinations
   (JNIEnv *, jobject);
+
+JNIEXPORT jlong JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getCurrentPresentationTime
+        (JNIEnv *, jobject);
+
+JNIEXPORT jboolean JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_isRunning
+        (JNIEnv *, jobject);
+
+JNIEXPORT jboolean JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_isSending
+        (JNIEnv *, jobject);
+
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_pauseSending
+        (JNIEnv *, jobject);
 
 #ifdef __cplusplus
 }

@@ -19,6 +19,12 @@ public:
 
     static SenderSession *StartStreaming(uint16_t portbase, AMediaExtractor *extractor);
 
+    bool IsSender() {
+        return true;
+    }
+
+    int64_t CurrentPlaybackTimeUs();
+
 protected:
 
     void OnNewSource(jrtplib::RTPSourceData *dat);
@@ -31,6 +37,7 @@ protected:
                      const jrtplib::RTPAddress *senderaddress);
 
 private:
+    int64_t playbackStartUs = 0;
     std::atomic_int connectedSources;
     AMediaExtractor *extractor;
 

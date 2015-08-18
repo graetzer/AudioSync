@@ -197,6 +197,10 @@ void ReceiverSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &recei
     }
 }
 
+int64_t ReceiverSession::CurrentPlaybackTimeUs() {
+    return audioplayer_currentPlaybackTimeUs();
+}
+
 void *ReceiverSession::RunNetworkThread(void *ctx) {
     ((ReceiverSession *) ctx)->RunNetwork();
     return NULL;

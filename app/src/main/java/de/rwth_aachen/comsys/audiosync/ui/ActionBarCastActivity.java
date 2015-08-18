@@ -21,14 +21,12 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.os.Handler;
+import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.MediaRouteButton;
-import android.support.v7.media.MediaRouter;
 import android.support.v7.widget.Toolbar;
-import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -39,13 +37,9 @@ import android.widget.SimpleAdapter;
 
 import de.rwth_aachen.comsys.audiosync.R;
 import de.rwth_aachen.comsys.audiosync.utils.LogHelper;
-import de.rwth_aachen.comsys.audiosync.utils.PrefUtils;
 import de.rwth_aachen.comsys.audiosync.utils.ResourceHelper;
 import com.github.amlcurran.showcaseview.ShowcaseView;
 import com.github.amlcurran.showcaseview.targets.ViewTarget;
-import com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager;
-import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumerImpl;
-
 /**
  * Abstract activity with toolbar, navigation drawer and cast support. Needs to be extended by
  * any activity that wants to be shown as a top level activity.
@@ -60,10 +54,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
 
     private static final String TAG = LogHelper.makeLogTag(ActionBarCastActivity.class);
 
-    private static final int DELAY_MILLIS = 1000;
-
-    private VideoCastManager mCastManager;
-    private MenuItem mMediaRouteMenuItem;
     private Toolbar mToolbar;
     private ActionBarDrawerToggle mDrawerToggle;
     private DrawerLayout mDrawerLayout;
@@ -73,45 +63,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     private boolean mToolbarInitialized;
 
     private int mItemToOpenWhenDrawerCloses = -1;
-
-    private final VideoCastConsumerImpl mCastConsumer = new VideoCastConsumerImpl() {
-
-        @Override
-        public void onFailed(int resourceId, int statusCode) {
-            LogHelper.d(TAG, "onFailed ", resourceId, " status ", statusCode);
-        }
-
-        @Override
-        public void onConnectionSuspended(int cause) {
-            LogHelper.d(TAG, "onConnectionSuspended() was called with cause: ", cause);
-        }
-
-        @Override
-        public void onConnectivityRecovered() {
-        }
-
-        @Override
-        public void onCastDeviceDetected(final MediaRouter.RouteInfo info) {
-            // FTU stands for First Time Use:
-            if (!PrefUtils.isFtuShown(ActionBarCastActivity.this)) {
-                // If user is seeing the cast button for the first time, we will
-                // show an overlay that explains what that button means.
-                PrefUtils.setFtuShown(ActionBarCastActivity.this, true);
-
-                LogHelper.d(TAG, "Route is visible: ", info);
-                new Handler().postDelayed(new Runnable() {
-
-                    @Override
-                    public void run() {
-                        if (mMediaRouteMenuItem.isVisible()) {
-                            LogHelper.d(TAG, "Cast Icon is visible: ", info.getName());
-                            showFtu();
-                        }
-                    }
-                }, DELAY_MILLIS);
-            }
-        }
-    };
 
     private final DrawerLayout.DrawerListener mDrawerListener = new DrawerLayout.DrawerListener() {
         @Override
@@ -158,12 +109,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         LogHelper.d(TAG, "Activity onCreate");
-
-        // Ensure that Google Play Service is available.
-        VideoCastManager.checkGooglePlayServices(this);
-
-        mCastManager = VideoCastManager.getInstance();
-        mCastManager.reconnectSessionIfPossible();
     }
 
     @Override
@@ -186,8 +131,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
-        mCastManager.addVideoCastConsumer(mCastConsumer);
-        mCastManager.incrementUiCounter();
 
         // Whenever the fragment back stack changes, we may need to update the
         // action bar toggle: only top level screens show the hamburger-like icon, inner
@@ -206,8 +149,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     @Override
     public void onPause() {
         super.onPause();
-        mCastManager.removeVideoCastConsumer(mCastConsumer);
-        mCastManager.decrementUiCounter();
         getFragmentManager().removeOnBackStackChangedListener(mBackStackChangedListener);
     }
 
@@ -215,7 +156,6 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     public boolean onCreateOptionsMenu(Menu menu) {
         super.onCreateOptionsMenu(menu);
         getMenuInflater().inflate(R.menu.main, menu);
-        mMediaRouteMenuItem = mCastManager.addMediaRouterButton(menu, R.id.media_route_menu_item);
         return true;
     }
 
@@ -235,7 +175,7 @@ public abstract class ActionBarCastActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
         // If the drawer is open, back will close it
-        if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(Gravity.START)) {
+        if (mDrawerLayout != null && mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawers();
             return;
         }

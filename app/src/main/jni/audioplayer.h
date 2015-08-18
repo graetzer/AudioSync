@@ -41,6 +41,7 @@ void audioplayer_syncPlayback(int64_t systemTimeUs, int64_t playbackTimeUs);
 void audioplayer_setSystemTimeOffset(int64_t offsetUs);
 // Call this regulary if you don't call any other methods here regulary instead
 void audioplayer_monitorPlayback();
+int64_t audioplayer_currentPlaybackTimeUs();
 /**
  * Stop playback
  */

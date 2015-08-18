@@ -29,22 +29,7 @@ import android.widget.Toast;
 import de.rwth_aachen.comsys.audiosync.model.MusicProvider;
 import de.rwth_aachen.comsys.audiosync.utils.LogHelper;
 import de.rwth_aachen.comsys.audiosync.utils.MediaIDHelper;
-import com.google.android.gms.cast.MediaInfo;
-import com.google.android.gms.cast.MediaMetadata;
-import com.google.android.gms.cast.MediaStatus;
-import com.google.android.gms.common.images.WebImage;
-import com.google.android.libraries.cast.companionlibrary.cast.VideoCastManager;
 import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumerImpl;
-import com.google.android.libraries.cast.companionlibrary.cast.exceptions.CastException;
-import com.google.android.libraries.cast.companionlibrary.cast.exceptions.NoConnectionException;
-import com.google.android.libraries.cast.companionlibrary.cast.exceptions.TransientNetworkDisconnectionException;
-
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.client.methods.HttpGet;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -129,6 +114,9 @@ public class CastPlayback implements Playback {
         } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
             LogHelper.e(TAG, e, "Exception getting media position");
         }*/
+        if (mAudioCore != null) {
+            return (int) mAudioCore.getCurrentPresentationTime();
+        }
         return -1;
     }
 
@@ -268,7 +256,7 @@ public class CastPlayback implements Playback {
             this.mTargetFile = targetFile;
             this.mAudioCore = audioCore;
             this.port = port;
-            Log.i("DownloadTask","Constructor done");
+            Log.i("DownloadTask", "Constructor done");
         }
 
         @Override
@@ -351,8 +339,9 @@ public class CastPlayback implements Playback {
             mWakeLock.release();
             if (result != null)
                 Toast.makeText(mContext, "Download error: " + result, Toast.LENGTH_LONG).show();
-            else
-                mAudioCore.startPlaying(port, mTargetFile.getAbsolutePath());
+            else {
+                mAudioCore.startPlayingFile(port, mTargetFile.getAbsolutePath());
+            }
         }
     }
 
@@ -379,15 +368,7 @@ public class CastPlayback implements Playback {
         //mCastManager.loadMedia(media, autoPlay, mCurrentPosition, customData);
     }
 
-    /**
-     * Helper method to convert a {@link android.media.MediaMetadata} to a
-     * {@link com.google.android.gms.cast.MediaInfo} used for sending media to the receiver app.
-     *
-     * @param track {@link com.google.android.gms.cast.MediaMetadata}
-     * @param customData custom data specifies the local mediaId used by the player.
-     * @return mediaInfo {@link com.google.android.gms.cast.MediaInfo}
-     */
-    private static MediaInfo toCastMediaMetadata(android.media.MediaMetadata track,
+    /*private static MediaInfo toCastMediaMetadata(android.media.MediaMetadata track,
                                                  JSONObject customData) {
         MediaMetadata mediaMetadata = new MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK);
         mediaMetadata.putString(MediaMetadata.KEY_TITLE,
@@ -416,7 +397,7 @@ public class CastPlayback implements Playback {
                 .setMetadata(mediaMetadata)
                 .setCustomData(customData)
                 .build();
-    }
+    }*/
 
     private void updateMetadata() {
         // Sync: We get the customData from the remote media information and update the local

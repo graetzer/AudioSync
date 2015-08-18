@@ -35,7 +35,8 @@ struct decoder_audio {
 
 // ========================== Helper functions for streaming extracting ==========================
 
-AMediaExtractor *decoder_createExtractor(int fd, off64_t offset, off64_t fileSize);
+AMediaExtractor *decoder_createExtractorFromFd(int fd, off64_t offset, off64_t fileSize);
+AMediaExtractor *decoder_createExtractorFromUri(const char *path);
 
 ssize_t decoder_extractData(AMediaExtractor *extractor, uint8_t *buffer, size_t capacity,
                             int64_t *timeUSec);

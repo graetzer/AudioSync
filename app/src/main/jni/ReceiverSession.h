@@ -18,6 +18,8 @@ public:
 
     static AudioStreamSession *StartReceiving(const char *host, uint16_t portbase);
 
+    int64_t CurrentPlaybackTimeUs();
+
 protected:
     void RunNetwork();
 

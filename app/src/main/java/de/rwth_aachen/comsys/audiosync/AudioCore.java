@@ -30,12 +30,12 @@ public class AudioCore {
         mAssetManager = ctx.getAssets();
     }
 
-    public void startPlaying(int portbase, String path) {
-        startStreaming(portbase, mAssetManager, path);
+    public void startPlayingFile(int portbase, String path) {
+        startStreamingUri(portbase, path);
     }
 
     public void startPlaying(int portbase) {
-        startPlaying(portbase, "background.mp3");
+        startStreamingAsset(portbase, mAssetManager, "background.mp3");
     }
 
     public void cleanup() {
@@ -73,9 +73,11 @@ public class AudioCore {
      * Start sending data to clients, setup sntp server in response
      * mode on the specified port
      *
-     * @param path Path to a file
+     * @param name Name of a file
      */
-    private native void startStreaming(int portbase, AssetManager assetManager, String path);
+    private native void startStreamingAsset(int portbase, AssetManager assetManager, String name);
+
+    private native void startStreamingUri(int portbase, String path);
 
     /**
      * Starts the clients
@@ -93,6 +95,20 @@ public class AudioCore {
      * Returns the number of available RTPSources
      */
     public native AudioDestination[] getAudioDestinations();
+
+    /**
+     * Return current presentation time in milliseconds
+     * */
+    public native long getCurrentPresentationTime();
+
+    public native boolean isRunning();
+
+    public native boolean isSending();
+
+    /**
+     * Only possible if sending
+     */
+    public native void pauseSending();
 
     static {
         System.loadLibrary("AudioCore");

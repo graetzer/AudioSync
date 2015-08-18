@@ -148,19 +148,8 @@ struct decoder_audio decoder_decodeFile(int fd, off64_t offset, off64_t fileSize
     return result;
 }*/
 
-
-// ========================== Helper functions for streaming extracting ==========================
-
-AMediaExtractor *decoder_createExtractor(int fd, off64_t offset, off64_t fileSize) {
-
-    AMediaExtractor *extractor = AMediaExtractor_new();
-    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, offset, fileSize);
-    if (status != AMEDIA_OK) {
-        debugLog("Error opening file");
-        return NULL;
-    }
-
-    // Find the audio track
+bool decoder_selectAudioTrack(AMediaExtractor *extractor) {
+// Find the audio track
     size_t tracks = AMediaExtractor_getTrackCount(extractor);
     debugLog("Audio file has %u tracks", (unsigned int) tracks);
     for (size_t idx = 0; idx < tracks; idx++) {
@@ -169,14 +158,41 @@ AMediaExtractor *decoder_createExtractor(int fd, off64_t offset, off64_t fileSiz
         bool success = AMediaFormat_getString(format, AMEDIAFORMAT_KEY_MIME, &mime_type);
         if (success && startsWith("audio/", mime_type)) {// We got a winner
             debugLog("Audio file format: %s", AMediaFormat_toString(format));
-            status = AMediaExtractor_selectTrack(extractor, idx);
-            if (status != AMEDIA_OK) return NULL;
+            media_status_t status = AMediaExtractor_selectTrack(extractor, idx);
+            if (status != AMEDIA_OK) return false;
 
             AMediaFormat_delete(format);
             break;
         }
         AMediaFormat_delete(format);
     }
+    return true;
+}
+
+
+// ========================== Helper functions for streaming extracting ==========================
+
+AMediaExtractor *decoder_createExtractorFromFd(int fd, off64_t offset, off64_t fileSize) {
+
+    AMediaExtractor *extractor = AMediaExtractor_new();
+    media_status_t status = AMediaExtractor_setDataSourceFd(extractor, fd, offset, fileSize);
+    if (status != AMEDIA_OK || !decoder_selectAudioTrack(extractor)) {
+        debugLog("Error opening file");
+        return NULL;
+    }
+
+    return extractor;
+}
+
+AMediaExtractor *decoder_createExtractorFromUri(const char *path) {
+
+    AMediaExtractor *extractor = AMediaExtractor_new();
+    media_status_t status = AMediaExtractor_setDataSource(extractor, path);
+    if (status != AMEDIA_OK || !decoder_selectAudioTrack(extractor)) {
+        debugLog("Error opening file");
+        return NULL;
+    }
+
     return extractor;
 }
 

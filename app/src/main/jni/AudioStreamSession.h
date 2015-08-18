@@ -43,6 +43,13 @@ public:
         return isRunning;
     }
 
+    // el cheapo RTTI, since we don't have it
+    virtual bool IsSender() {
+        return false;
+    }
+
+    virtual int64_t CurrentPlaybackTimeUs() = 0;
+
 protected:
     pthread_t networkThread = 0, ntpThread = 0;
     bool isRunning = true;

@@ -39,11 +39,6 @@ void thread_exit_handler(int sig) {
 // Global audiostream manager
 AudioStreamSession *audioSession;
 
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    initAudio
- * Signature: (II)V
- */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio(JNIEnv *env, jobject thiz,
                                                                jint samplesPerSec,
                                                                jint framesPerBuffer) {
@@ -67,21 +62,11 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio(JNIEnv *env, jo
     audioplayer_cleanup();// Player stops automatically
 }
 
-//static const char android[] =
-//#include "android_clip.h"
-//;
 
-/*
- * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
- * Method:    startPlayback
- * Signature: (Ljava/lang/String;)V
- */
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz,
                                                                     jint portbase,
                                                                     jobject assetManager,
                                                                     jstring jPath) {
-    //void *buffer = memcpy(malloc(sizeof(android)), android, sizeof(android));
-    //audioplayer_startPlayback(buffer, sizeof(android), 8000, 1);/*
 
     AAssetManager *mgr = AAssetManager_fromJava(env, assetManager);
     const char *path = env->GetStringUTFChars(jPath, 0);
@@ -98,19 +83,19 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env,
     assert(0 <= fd);
 
     debugLog("Audio file offset: %ld, size: %ld", outStart, fileSize);
-    AMediaExtractor *extr = decoder_createExtractor(fd, outStart, fileSize);
-    audioSession = SenderSession::StartStreaming((uint16_t) portbase, extr);//*/
+    AMediaExtractor *extr = decoder_createExtractorFromFd(fd, outStart, fileSize);
+    audioSession = SenderSession::StartStreaming((uint16_t) portbase, extr);
 
     AAsset_close(asset);
+}
 
-    /*struct decoder_audio audio = decoder_decodeFile(fd, outStart, fileSize);
-    debugLog("Decoded size %ld", (long) audio.pcmLength);
-    if (audio.pcmLength > 0)
-        audioplayer_startPlayback(audio.pcm, (size_t)audio.pcmLength, audio.sampleRate, audio.numChannels);
-    else
-        debugLog("Decoding seems to have failed");
+void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreamingUri
+        (JNIEnv *env, jobject thiz, jint portbase, jstring jPath) {
 
-    //*/
+    const char *path = env->GetStringUTFChars(jPath, 0);
+    AMediaExtractor *extr = decoder_createExtractorFromUri(path);
+    env->ReleaseStringUTFChars(jPath, path);
+    audioSession = SenderSession::StartStreaming((uint16_t) portbase, extr);
 }
 
 /*
@@ -184,3 +169,32 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
     return ret;
 }
 
+/*
+ * Return current presentation time in milliseconds
+ */
+jlong Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getCurrentPresentationTime
+        (JNIEnv *, jobject) {
+    if (audioSession != NULL && audioSession->IsRunning())
+        return (jlong)(audioSession->CurrentPlaybackTimeUs() / 1000);
+    return -1;
+}
+
+jboolean Java_de_rwth_1aachen_comsys_audiosync_AudioCore_isRunning (JNIEnv *, jobject) {
+    bool a = audioSession != NULL && audioSession->IsRunning();
+    return (jboolean) (a ? JNI_TRUE : JNI_FALSE);
+}
+
+jboolean Java_de_rwth_1aachen_comsys_audiosync_AudioCore_isSending(JNIEnv *, jobject) {
+    if (audioSession != NULL && audioSession->IsSender()) {
+        return (jboolean) (audioSession->IsRunning());
+    }
+    return JNI_FALSE;
+}
+
+void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_pauseSending
+        (JNIEnv *, jobject) {
+    if (audioSession != NULL && audioSession->IsSender()) {
+        SenderSession *sender = (SenderSession *)audioSession;
+        // TODO
+    }
+}

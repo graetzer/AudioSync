@@ -72,7 +72,7 @@ void SenderSession::RunNetwork() {
         }
 
         if (written >= 0) {
-            if (written > 1024) {
+            if (written > 1200) {
                 log("Package is too large: %ld, split it up. (%.2fs)", (long) written, timeUs/1E6);
                 // TODO these UDP packages are definitely too large and result in IP fragmentation
                 // most MTU's will be 1500, RTP header is 12 bytes we should
@@ -125,12 +125,10 @@ void SenderSession::sendClockSync(int64_t playbackUSeconds) {
         } while(GotoNextSource());
     }*/
 
-    static int64_t initialSync;
-    if (playbackUSeconds == 0) {
-        initialSync = audiosync_systemTimeUs() + maxOffsetUSec;// now + maxOffset
+    if (playbackUSeconds == 0) {// now + maxOffset
+        this->playbackStartUs = audiosync_systemTimeUs() + maxOffsetUSec;
     }
-
-    int64_t usecs = initialSync + playbackUSeconds;
+    int64_t usecs = this->playbackStartUs + playbackUSeconds;
     audiostream_clockSync sync;
     sync.systemTimeUs = htonq(usecs);
     sync.playbackTimeUs = htonq(playbackUSeconds);
@@ -152,6 +150,11 @@ void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receive
             source->SetClockOffsetUSeconds(offsetUs);
         }
     }
+}
+
+int64_t SenderSession::CurrentPlaybackTimeUs() {
+    int64_t pUs = audiosync_systemTimeUs() - this->playbackStartUs;
+    return pUs > 0 ? pUs : 0;// Can be negative initially
 }
 
 /*void SenderSession::SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,

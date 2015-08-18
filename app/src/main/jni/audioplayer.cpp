@@ -151,11 +151,28 @@ static void _createEngine() {
     _checkerror(result);
 }
 
+void _generateTone(int16_t *buf_ptr) {
+    static double theta;
+    double theta_increment = 2.0 * M_PI * 432.0 / current_samplesPerSec;
+    // Generate the samples
+    for (int frame = 0; frame < global_framesPerBuffers; frame++) {
+        int16_t v = (int16_t) (sin(theta) * 65535.0 * 0.1);
+
+        for (int c = 0; c < current_numChannels; c++) {
+            buf_ptr[frame * current_numChannels + c] = (uint8_t) (v & 0x00FF);
+        }
+        theta += theta_increment;
+        if (theta > 2.0 * M_PI) {
+            theta -= 2.0 * M_PI;
+        }
+    }
+}
+
 // Temporary buffer for the audio buffer queue.
 // 8192 equals 2048 frames with 2 channels with 16bit PCM format
 #define N_BUFFERS 3
-#define MAX_BUFFER_SIZE 8192
-uint8_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
+#define MAX_BUFFER_SIZE 4096
+int16_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
 uint32_t tempBuffers_ix = 0;
 // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
@@ -167,31 +184,41 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
     // Assuming PCM 16
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
     // global_framesPerBuffers is the max amount of frames we read
-    size_t frameSize = current_numChannels * sizeof(uint16_t); // 16 bit PCM data
-    size_t frameCountSize = global_framesPerBuffers * frameSize;
-    uint8_t *buf_ptr = tempBuffers + frameCountSize * tempBuffers_ix;
+    size_t frameCountSize = global_framesPerBuffers * current_numChannels * sizeof(int16_t);
+    int16_t *buf_ptr = tempBuffers + frameCountSize * tempBuffers_ix;
     tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
 
     if (!current_isPlaying) {// Don't actually starve the buffer, just keep it running
-        memset(buf_ptr, 1, frameCountSize);// for some reason 0 doesn't work
+        //memset(buf_ptr, 1, frameCountSize);// for some reason 0 doesn't work
+        _generateTone(buf_ptr);
         SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
         _checkerror(result);
         return;
     }
 
-
     // Now we can start playing
     ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
-    if (current_playerQueuedFrames == 0) {
-
-    }
     if (frameCount > 0) {
+        // On first call, merge with standby sound
+        if (current_playerQueuedFrames == 0) {
+            int16_t *other_ptr = tempBuffers + frameCountSize * tempBuffers_ix;
+            _generateTone(other_ptr);
+            for (int frame = 0; frame < frameCount; frame++) {
+                for (int c = 0; c < current_numChannels; c++) {
+                    size_t xx = frame * current_numChannels + c;
+                    buf_ptr[xx] = (int16_t)((buf_ptr[xx]*(frameCount - frame)
+                                             + other_ptr[xx]*frame) / frameCount);
+                }
+            }
+        }
+
+        frameCountSize = frameCount * current_numChannels * sizeof(int16_t);
+        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
+        _checkerror(result);
+
         current_playerIsStarving = false;
         current_playerQueuedFrames += frameCount;
 
-        frameCountSize = frameCount * frameSize;
-        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) frameCountSize);
-        _checkerror(result);
     } else {
         current_playerIsStarving = true;
         debugLog("_bqPlayerCallback: Audio FiFo is empty");
@@ -311,14 +338,15 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     }
 
     _createBufferQueueAudioPlayer(current_samplesPerSec, current_numChannels);
+    debugLog("TestTest");
     // Always use optimal rate, resample by slowing down playback
-    if (global_samplesPerSec != samplesPerSec) {
+    if (global_samplesPerSec != samplesPerSec && playerPlayRate != NULL) {
         // Will probably result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
         debugLog("Global:%d != Current: %d", global_samplesPerSec, samplesPerSec);
 
         current_defaultRatePromille = (1000 * samplesPerSec)/global_samplesPerSec;
         current_ratePromille = current_defaultRatePromille;
-        debugLog("El cheapo resampling, slow down to %"PRId32, current_ratePromille);
+        debugLog("El cheapo resampling, slow down to %" PRId32, current_ratePromille);
         (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePromille);
     }
 
@@ -329,10 +357,10 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     fifoBuffer = realloc(fifoBuffer, frameCount * frameSize);// Is as good as malloc
     audio_utils_fifo_init(&fifo, frameCount, frameSize, fifoBuffer);
 
-    _bqPlayerCallback(playerBufferQueue, NULL);
     // This call has latency, we need to keep the audio system starving to perform start / pause
     SLresult result = (*playerPlay)->SetPlayState(playerPlay, SL_PLAYSTATE_PLAYING);
     _checkerror(result);
+    _bqPlayerCallback(playerBufferQueue, NULL);
     debugLog("Initialized playback");
 }
 
@@ -449,9 +477,13 @@ void audioplayer_monitorPlayback() {
             lastDiff = 0;
 
             current_isPlaying = true;
-            debugLog("Started playback late / early %"PRId64, sync.systemTimeUs - nowUs);
+            debugLog("Started playback late / early %" PRId64, sync.systemTimeUs - nowUs);
         }
     }
+}
+
+int64_t audioplayer_currentPlaybackTimeUs() {
+    return mark.playbackTimeUs;
 }
 
 void audioplayer_stopPlayback() {
