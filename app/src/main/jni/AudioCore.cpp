@@ -59,7 +59,7 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_initAudio(JNIEnv *env, jobj
 void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio(JNIEnv *env, jobject thiz) {
     if (audioSession) audioSession->Stop();
     if (audioSession) delete audioSession;
-    audioplayer_cleanup();// Player stops automatically
+    audioplayer_cleanup();
 }
 
 

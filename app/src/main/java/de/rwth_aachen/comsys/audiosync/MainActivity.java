@@ -1,15 +1,10 @@
 package de.rwth_aachen.comsys.audiosync;
 
-import android.app.Activity;
 import android.app.Fragment;
 import android.content.Intent;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Bundle;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.widget.Toast;
-
-import java.util.Random;
 
 import de.rwth_aachen.comsys.audiosync.ui.BaseActivity;
 
@@ -74,7 +69,7 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
                 String host = serviceInfo.getHost().getHostAddress();
                 int port = serviceInfo.getPort();
                 if (host != null && port % 2 == 0) {
-                    mAudioCore.startReceiving(host, port);
+                    mAudioCore.startListening(host, port);
                 } else {
                     Toast.makeText(MainActivity.this, "Something is fishy, RTP ports must be even", Toast.LENGTH_LONG).show();
                 }

@@ -28,7 +28,7 @@ using namespace jrtplib;
 static void _checkerror(int rtperr) {
     if (rtperr < 0) {
         debugLog("RTP Error: %s", RTPGetErrorString(rtperr).c_str());
-        pthread_exit(0);
+        //pthread_exit(0);
     }
 }
 
@@ -47,12 +47,8 @@ void SenderSession::RunNetwork() {
     if (!isRunning) return;
 
     log("Client connected, starting to send in 2 seconds");
-    RTPTime::Wait(RTPTime(2, 0));// Let's wait for some NTP sync's
-
-    // Send out the initial clock sync, the decoder time
-    // equals the presentation time of the last byte
-    this->sendClockSync(0);
-    RTPTime::Wait(RTPTime(0, 5000));
+    RTPTime::Wait(RTPTime(3, 0));// Let's wait for some NTP sync's
+    this->playbackStartUs = audiosync_systemTimeUs() + transmissionLatency();
 
     ssize_t written = 0;
     int64_t lastTimeUs = -1, lastClockSyncUs = 0;
@@ -64,13 +60,6 @@ void SenderSession::RunNetwork() {
         uint32_t timestampinc = (uint32_t) (timeUs - lastTimeUs);// Assuming it will fit
         lastTimeUs = timeUs;
 
-        // Periodically send out clock syncs
-        if (timeUs - lastClockSyncUs > SECOND_MICRO/2) {
-            this->sendClockSync(timeUs);
-            lastClockSyncUs = timeUs;
-            RTPTime::Wait(RTPTime(0, 1000));// Give the clients the chance to process this first
-        }
-
         if (written >= 0) {
             if (written > 1200) {
                 log("Package is too large: %ld, split it up. (%.2fs)", (long) written, timeUs/1E6);
@@ -79,7 +68,17 @@ void SenderSession::RunNetwork() {
                 // split the packets up at some point(1024 seems reasonable)
                 //SendPacketRecursive(buffer, (size_t) written, 0, false, timestampinc);
             }
-            status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
+            // Periodically send out clock syncs
+            //if (timeUs - lastClockSyncUs > SECOND_MICRO) {
+                int64_t usecs = htonq(this->playbackStartUs + timeUs);
+                status = SendPacketEx(buffer, (size_t) written, 0, false, timestampinc,
+                                      AUDIOSYNC_EXTENSION_HEADER_ID,
+                                      &usecs,
+                                      sizeof(int64_t) / sizeof(uint32_t));
+                lastClockSyncUs = timeUs;
+            //} else {
+            //    status = SendPacket(buffer, (size_t) written, 0, false, timestampinc);
+           // }
         } else {
             buffer[0] = '\0';
             status = SendPacket(buffer, 1, 0, true, timestampinc);// Use marker as end of data mark
@@ -90,8 +89,8 @@ void SenderSession::RunNetwork() {
         // Don't decrease the waiting time too much, sending a great number of packets very fast,
         // will cause the network (or the client) to drop a high number of these packets.
         // TODO auto-adjust this value based on lost packets, figure out how to utilize throughput
-        uint32_t waitUs = timestampinc > 5000 ? timestampinc - 5000 : 5000;
-        RTPTime::Wait(RTPTime(0, waitUs));
+        //uint32_t waitUs = timestampinc > 10000 ? timestampinc - 10000 : 2000;
+        RTPTime::Wait(RTPTime(0, timestampinc/2));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
@@ -112,18 +111,22 @@ void SenderSession::RunNetwork() {
     BYEDestroy(RTPTime(2, 0), 0, 0);
 }
 
-void SenderSession::sendClockSync(int64_t playbackUSeconds) {
+int64_t SenderSession::transmissionLatency() {
+    return 5 * SECOND_MICRO;;
+}
+
+/*void SenderSession::sendClockSync(int64_t playbackUSeconds) {
     // Let's put playback a little in the future, because the clients will buffer data
     // and start after this treshold was met
-    int64_t maxOffsetUSec = 3 * SECOND_MICRO;
+    int64_t maxOffsetUSec = 5 * SECOND_MICRO;
     // TODO replace with latency search, it doesn't matter how much the clocks diverge
-    /*if (GotoFirstSource()) {
+    if (GotoFirstSource()) {
         do {// Always use the largest offset, technically we can ignore positive offsets
             // because a positive offset means the clients lags behind
             int64_t offset = (int64_t) llabs(GetCurrentSourceInfo()->GetClockOffsetUSeconds());
             if (maxOffsetUSec < offset) maxOffsetUSec = offset;
         } while(GotoNextSource());
-    }*/
+    }
 
     if (playbackUSeconds == 0) {// now + maxOffset
         this->playbackStartUs = audiosync_systemTimeUs() + maxOffsetUSec;
@@ -133,7 +136,7 @@ void SenderSession::sendClockSync(int64_t playbackUSeconds) {
     sync.systemTimeUs = htonq(usecs);
     sync.playbackTimeUs = htonq(playbackUSeconds);
     SendRTCPAPPPacket(AUDIOSTREAM_PACKET_CLOCK_SYNC, AUDIOSTREAM_APP, &sync, sizeof(audiostream_clockSync));
-}
+}*/
 
 void SenderSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &receivetime,
                                 const RTPAddress *senderaddress) {
@@ -244,7 +247,7 @@ void * SenderSession::RunNTPServer(void *ctx) {
     if (msntp_start_server(port) != 0)
         return NULL;
 
-    printf("Listening for SNTP clients on port %d...", port);
+    debugLog("Listening for SNTP clients on port %d...", port);
     while (sess->IsRunning()) {
         int ret = msntp_serve();
         if (ret > 0 || ret < -1) return NULL;

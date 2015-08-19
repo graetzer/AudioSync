@@ -72,5 +72,7 @@ protected:
 //            put the timestamp unit to (1.0/1000.0)
 // AMediaExtractor uses microseconds too, so we can transport the correct playback time
 #define AUDIOSYNC_TIMESTAMP_UNITS (1.0 / 48000.0)
+// Random extension id
+#define AUDIOSYNC_EXTENSION_HEADER_ID 7
 
 #endif

@@ -15,11 +15,8 @@
  */
 package de.rwth_aachen.comsys.audiosync;
 
-import android.app.ProgressDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.media.session.PlaybackState;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.PowerManager;
 import android.text.TextUtils;
@@ -29,7 +26,6 @@ import android.widget.Toast;
 import de.rwth_aachen.comsys.audiosync.model.MusicProvider;
 import de.rwth_aachen.comsys.audiosync.utils.LogHelper;
 import de.rwth_aachen.comsys.audiosync.utils.MediaIDHelper;
-import com.google.android.libraries.cast.companionlibrary.cast.callbacks.VideoCastConsumerImpl;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -52,20 +48,6 @@ public class CastPlayback implements Playback {
     private static final String ITEM_ID = "itemId";
 
     private final MusicProvider mMusicProvider;
-    private final VideoCastConsumerImpl mCastConsumer = new VideoCastConsumerImpl() {
-
-        @Override
-        public void onRemoteMediaPlayerMetadataUpdated() {
-            LogHelper.d(TAG, "onRemoteMediaPlayerMetadataUpdated");
-            updateMetadata();
-        }
-
-        @Override
-        public void onRemoteMediaPlayerStatusUpdated() {
-            LogHelper.d(TAG, "onRemoteMediaPlayerStatusUpdated");
-            updatePlaybackState();
-        }
-    };
 
     /** The current PlaybackState*/
     private int mState;
@@ -130,7 +112,7 @@ public class CastPlayback implements Playback {
         if(isPlaying())
             pause();
         // Choose a port over 5000 to avoid automatically assigned ports
-        int port = 21212;//5000 + (int) (Math.random() * 10000);
+        int port = 10000 + (int) (Math.random() * 10000);
         if (port % 2 != 0) port++;// RTP has to be an even port number
         mNSDHelper.registerService(port);
         loadMedia(item.getDescription().getMediaId(), port);

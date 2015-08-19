@@ -44,7 +44,7 @@ private:
     void RunNetwork();
     /*void SendPacketRecursive(const void *data, size_t len, uint8_t pt, bool mark,
                              uint32_t timestampinc);*/
-    void sendClockSync(int64_t playbackUSeconds);
+    int64_t transmissionLatency();
     jrtplib::RTPAddress *addressFromData(jrtplib::RTPSourceData *dat);
 
     static void *RunNetworkThread(void *ctx);

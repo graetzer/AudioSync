@@ -5,11 +5,17 @@ import android.content.res.AssetManager;
 import android.media.AudioManager;
 import android.util.Log;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 /**
- * Created by simon on 27.06.15.
+ * @author simon@graetzer.org
  */
 public class AudioCore {
+    private static final String TAG = AudioCore.class.getSimpleName();
     private AssetManager mAssetManager;
+    private ExecutorService mPool = Executors.newSingleThreadExecutor();
 
     public AudioCore(Context ctx) {
         setup(ctx.getApplicationContext());
@@ -22,47 +28,57 @@ public class AudioCore {
     }
 
     private void setup(Context ctx) {
-        AudioManager audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-        String sr = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE);
-        String bs = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
-        initAudio(Integer.parseInt(sr), Integer.parseInt(bs));
-
         mAssetManager = ctx.getAssets();
+        AudioManager audioManager = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+        final String sr = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE);
+        final String bs = audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER);
+
+        mPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                initAudio(Integer.parseInt(sr), Integer.parseInt(bs));
+            }
+        });
     }
 
-    public void startPlayingFile(int portbase, String path) {
-        startStreamingUri(portbase, path);
+    public void startPlayingFile(final int portbase, final String path) {
+        mPool.submit(new Runnable() {
+            @Override
+            public void run() {
+                startStreamingUri(portbase, path);
+            }
+        });
     }
 
     public void startPlaying(int portbase) {
         startStreamingAsset(portbase, mAssetManager, "background.mp3");
     }
 
+    public void startListening(final String serverHost, final int portbase) {
+        mPool.submit(new Runnable() {
+            @Override
+            public void run() {
+                startReceiving(serverHost, portbase);
+            }
+        });
+    }
+
     public void cleanup() {
-        Thread t = new Thread() {
+        mPool.execute(new Runnable() {
             @Override
             public void run() {
                 deinitAudio();
             }
-        };
-        t.start();
+        });
     }
 
     public void stopPlaying() {
-        Thread t = new Thread() {
+        Future<?> task = mPool.submit(new Runnable() {
             @Override
             public void run() {
                 stopServices();// TODO figure out a better name
             }
-        };
-        t.start();
-
-        try {
-            t.join();
-        }
-        catch(InterruptedException ex)
-        {
-        }
+        });
     }
 
     private native void initAudio(int samplesPerSec, int framesPerBuffer);
@@ -84,7 +100,7 @@ public class AudioCore {
      *
      * @param serverHost Hostname of the server
      */
-    public native void startReceiving(String serverHost, int portbase);
+    private native void startReceiving(String serverHost, int portbase);
 
     /**
      * Stops the server/client if running. (Basically stop playing music)
@@ -105,10 +121,19 @@ public class AudioCore {
 
     public native boolean isSending();
 
+    public void pauseStreaming() {
+        mPool.submit(new Runnable() {
+            @Override
+            public void run() {
+                pauseSending();
+            }
+        });
+    }
+
     /**
      * Only possible if sending
      */
-    public native void pauseSending();
+    private native void pauseSending();
 
     static {
         System.loadLibrary("AudioCore");

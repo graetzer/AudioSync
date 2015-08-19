@@ -20,14 +20,14 @@
 #include "decoder.h"
 #include <cinttypes>
 
-#define NTP_PACKET_INTERVAL_SEC 2
+#define NTP_PACKET_INTERVAL_SEC 5
 
 using namespace jrtplib;
 
 static void _checkerror(int rtperr) {
     if (rtperr < 0) {
         debugLog("RTP Error: %s", RTPGetErrorString(rtperr).c_str());
-        pthread_exit(0);
+        //pthread_exit(0);
     }
 }
 
@@ -74,6 +74,17 @@ void ReceiverSession::RunNetwork() {
                         lastSeqNum = pack->GetSequenceNumber() - (uint16_t) 1;
                     }
                     timestamp -= beginTimestamp;
+                    if (pack->HasExtension()
+                        && pack->GetExtensionID() == AUDIOSYNC_EXTENSION_HEADER_ID
+                        && pack->GetExtensionLength() == sizeof(int64_t)) {
+                        int64_t *usec = (int64_t*) pack->GetExtensionData();
+                        audioplayer_syncPlayback(ntohq(*usec), 0);
+                    }
+
+                    /*if (pack->HasExtension()) {
+                        debugLog("Ext: %" PRIu16 " %lld", pack->GetExtensionID(), (long long)pack->GetExtensionLength());
+                    }*/
+
                     // Handle lost packets, TODO How does this work with multiple senders?
                     if (pack->GetSequenceNumber() != lastSeqNum + 1) {
                         // TODO handle mutliple packages with same timestamp. (Decode together?)
@@ -82,7 +93,7 @@ void ReceiverSession::RunNetwork() {
                             pack->GetSequenceNumber(), lastTimestamp / 1E6,
                             timestamp / 1E6);
                         // TODO evaluate the impact of this time gap parameter
-                        if (timestamp - lastTimestamp > 50000) {//50 ms
+                        if (timestamp - lastTimestamp > SECOND_MICRO/5) {//200 ms
                             // According to the docs we need to flushIf data is not adjacent.
                             // It is unclear how big these gaps can be and still be tolerable.
                             // During testing this call did cause the codec
@@ -136,6 +147,7 @@ void ReceiverSession::RunNetwork() {
         audioplayer_monitorPlayback();
         RTPTime::Wait(RTPTime(0, 50000));// 10ms
     }
+    audioplayer_stopPlayback();
 }
 
 void ReceiverSession::SetFormat(AMediaFormat *newFormat) {
@@ -187,14 +199,14 @@ void ReceiverSession::OnAPPPacket(RTCPAPPPacket *apppacket, const RTPTime &recei
                     AMediaFormat_delete(newFormat);
             }
         }
-    } else if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_SYNC
+    } /*else if (apppacket->GetSubType() == AUDIOSTREAM_PACKET_CLOCK_SYNC
                && apppacket->GetAPPDataLength() >= sizeof(audiostream_clockSync)) {
 
         audiostream_clockSync *sync = (audiostream_clockSync *) apppacket->GetAPPData();
         int64_t systemTimeUs = ntohq(sync->systemTimeUs);
         int64_t playbackTimeUs = ntohq(sync->playbackTimeUs);
         audioplayer_syncPlayback(systemTimeUs, playbackTimeUs);
-    }
+    }*/
 }
 
 int64_t ReceiverSession::CurrentPlaybackTimeUs() {
@@ -225,7 +237,7 @@ void *ReceiverSession::RunNTPClient(void *ctx) {
             // Send it to everyone
             sess->SendClockOffset(offsetUSecs);
             audioplayer_setSystemTimeOffset(offsetUSecs);
-            debugLog("My clock offset is %"PRId64, offsetUSecs);
+            debugLog("My clock offset is %fs", offsetUSecs/1E6);
         }
         RTPTime::Wait(RTPTime(NTP_PACKET_INTERVAL_SEC, 0));
     }
