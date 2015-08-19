@@ -25,6 +25,7 @@
 #include "apppacket.h"
 
 #include "readerwriterqueue/readerwriterqueue.h"
+//#include "fresample/fresample.h"
 
 
 #define debugLog(...) __android_log_print(ANDROID_LOG_DEBUG, "AudioPlayer", __VA_ARGS__)
@@ -219,7 +220,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
 
         int64_t diff = nowUs - systemTimeUs;
         current_drop = (diff * current_samplesPerSec) / SECOND_MICRO;
-        if (diff > accuracy*2) {
+        /*if (diff > accuracy*2) {
             size_t rr = current_drop <= MAX_BUFFER_SIZE ? (size_t)current_drop : MAX_BUFFER_SIZE;
             while (current_drop > 0) {
                 audio_utils_fifo_read(&fifo, buf_ptr, rr);
@@ -240,41 +241,61 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
             SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxFrameSize);
             _checkerror(result);
             return;
+        }*/
+
+        size_t requestFrames = global_framesPerBuffers;
+        if (diff > accuracy) {
+            if (current_drop*frameSize > MAX_BUFFER_SIZE)
+                requestFrames = MAX_BUFFER_SIZE / frameSize;
+            else
+                requestFrames += current_drop;
+        }
+        else if (diff < -accuracy*2) {// TODO develop smoothing algorithm
+            current_drop = -current_drop;
+            if (current_drop > global_framesPerBuffers) {
+                memset(buf_ptr, 0, maxFrameSize);// for some reason 0 doesn't work
+            } else {
+                maxFrameSize = current_drop * frameSize;
+                memset(buf_ptr, 0, maxFrameSize);
+                ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr + maxFrameSize,
+                                                           global_framesPerBuffers - (size_t)current_drop);
+                if (frameCount > 0) maxFrameSize += frameCount;
+            }
+            SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxFrameSize);
+            _checkerror(result);
+            return;
         }
 
-        //const size_t requestFrames = global_framesPerBuffers;
-        //if (current_drop > frameAccuracy) requestFrames += drop;
-        //else if (current_drop < -frameAccuracy) requestFrames -= drop;
-
         // Now we can start playing
-        ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, global_framesPerBuffers);
+        ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, requestFrames);
         if (frameCount > 0) {
 
             // Implementing dropping or stretching of frames
-            /*if (current_drop > frameAccuracy && frameCount == requestFrames) {
+            if (diff > accuracy && frameCount == requestFrames) {
+                int mod = (int)(frameCount / current_drop);
                 int nFrame = 0;
                 for (int frame = 0; frame < frameCount; frame++) {
                     int from = frame * current_numChannels;
                     int to = nFrame * current_numChannels;
 
-                    if (drop > 0 && frame % 5 == 0) {
+                    if (current_drop > 0 && frame % mod == 0) {
                         int next = from + current_numChannels;
                         for (int c = 0; c < current_numChannels; c++)
-                            buf_ptr[to+c] = //(int16_t) ((buf_ptr[from+c] + buf_ptr[next+c]) / 2);
-                        drop--;
+                            buf_ptr[to+c] = (int16_t) ((buf_ptr[from+c] + buf_ptr[next+c]) / 2);
+                        current_drop--;
                         continue;
                     }
 
                     for (int c = 0; c < current_numChannels; c++) buf_ptr[to+c] = buf_ptr[from+c];
                     nFrame++;
                 }
-                if (drop != 0) {
-                    debugLog("Srop should be 0");
+                if (current_drop != 0) {
+                    debugLog("Drop should be 0");
                 }
 
                 current_playerQueuedFrames += frameCount - global_framesPerBuffers;
                 frameCount = global_framesPerBuffers;
-            } else if (current_drop < -frameAccuracy && frameCount == requestFrames) {
+            } /*else if (current_drop < -frameAccuracy && frameCount == requestFrames) {
                 //frameCount += limit;
                 /*int16_t *target_ptr = tempBuffers + frameCountSize * tempBuffers_ix;
                 int nFrame = 0;
@@ -328,7 +349,7 @@ static void _createBufferQueueAudioPlayer(SLuint32 samplesPerSec, SLuint32 numCh
 
     // configure audio source
     SLDataLocator_AndroidSimpleBufferQueue bufferQueue = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
-                                                          1};// TODO 2 or 1 buffer ?
+                                                          1};
     SLDataFormat_PCM format_pcm = {
             .formatType = SL_DATAFORMAT_PCM,
             .numChannels = numChannels,
@@ -429,15 +450,15 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
 
     _createBufferQueueAudioPlayer(current_samplesPerSec, current_numChannels);
     // Always use optimal rate, resample by slowing down playback
-    /*if (global_samplesPerSec != samplesPerSec && playerPlayRate != NULL) {
+    if (global_samplesPerSec != samplesPerSec) {
         // Will probably result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
         debugLog("Global:%d != Current: %d", global_samplesPerSec, samplesPerSec);
 
-        current_idealRatePermille = (1000 * samplesPerSec)/global_samplesPerSec;// 1x speed
+        /*current_idealRatePermille = (1000 * samplesPerSec)/global_samplesPerSec;// 1x speed
         current_ratePermille = current_idealRatePermille;
         debugLog("El cheapo resampling, slow down to %" PRId32, current_ratePermille);
-        (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);
-    }*/
+        (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);*/
+    }
 
     // Initialize the audio buffer queue
     size_t frameCount = current_samplesPerSec * 60 * 5;// 5 minutes buffer
