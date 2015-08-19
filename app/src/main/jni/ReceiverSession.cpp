@@ -78,7 +78,7 @@ void ReceiverSession::RunNetwork() {
                         && pack->GetExtensionID() == AUDIOSYNC_EXTENSION_HEADER_ID
                         && pack->GetExtensionLength() == sizeof(int64_t)) {
                         int64_t *usec = (int64_t*) pack->GetExtensionData();
-                        audioplayer_syncPlayback(ntohq(*usec), 0);
+                        audioplayer_syncPlayback(ntohq(*usec), timestamp);
                     }
 
                     /*if (pack->HasExtension()) {
@@ -93,7 +93,7 @@ void ReceiverSession::RunNetwork() {
                             pack->GetSequenceNumber(), lastTimestamp / 1E6,
                             timestamp / 1E6);
                         // TODO evaluate the impact of this time gap parameter
-                        if (timestamp - lastTimestamp > SECOND_MICRO/5) {//200 ms
+                        if (timestamp - lastTimestamp > SECOND_MICRO/20) {//50 ms
                             // According to the docs we need to flushIf data is not adjacent.
                             // It is unclear how big these gaps can be and still be tolerable.
                             // During testing this call did cause the codec
@@ -237,7 +237,7 @@ void *ReceiverSession::RunNTPClient(void *ctx) {
             // Send it to everyone
             sess->SendClockOffset(offsetUSecs);
             audioplayer_setSystemTimeOffset(offsetUSecs);
-            debugLog("My clock offset is %fs", offsetUSecs/1E6);
+            //debugLog("My clock offset is %fs", offsetUSecs/1E6);
         }
         RTPTime::Wait(RTPTime(NTP_PACKET_INTERVAL_SEC, 0));
     }

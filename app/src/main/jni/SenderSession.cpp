@@ -90,7 +90,7 @@ void SenderSession::RunNetwork() {
         // will cause the network (or the client) to drop a high number of these packets.
         // TODO auto-adjust this value based on lost packets, figure out how to utilize throughput
         //uint32_t waitUs = timestampinc > 10000 ? timestampinc - 10000 : 2000;
-        RTPTime::Wait(RTPTime(0, timestampinc/2));
+        RTPTime::Wait(RTPTime(0, timestampinc/2 + 5000));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
@@ -244,8 +244,11 @@ RTPUDPv4TransmissionParams transparams;
 void * SenderSession::RunNTPServer(void *ctx) {
     SenderSession *sess = (SenderSession *) ctx;
     int port = transparams.GetPortbase() + AUDIOSYNC_SNTP_PORT_OFFSET;
-    if (msntp_start_server(port) != 0)
+    if (msntp_start_server(port) != 0) {
+        debugLog("Listening for SNTP clients on port %d...", port);
         return NULL;
+    }
+
 
     debugLog("Listening for SNTP clients on port %d...", port);
     while (sess->IsRunning()) {
