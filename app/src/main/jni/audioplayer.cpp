@@ -219,7 +219,8 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
     if (current_isPlaying) {
 
         int64_t diff = nowUs - systemTimeUs;
-        current_drop = (diff * current_samplesPerSec) / SECOND_MICRO;
+        int64_t drop = (diff * current_samplesPerSec) / SECOND_MICRO;
+        current_drop = drop;
         /*if (diff > accuracy*2) {
             size_t rr = current_drop <= MAX_BUFFER_SIZE ? (size_t)current_drop : MAX_BUFFER_SIZE;
             while (current_drop > 0) {
@@ -244,26 +245,37 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
         }*/
 
         size_t requestFrames = global_framesPerBuffers;
-        if (diff > accuracy) {
-            if (current_drop*frameSize > MAX_BUFFER_SIZE)
-                requestFrames = MAX_BUFFER_SIZE / frameSize;
-            else
-                requestFrames += current_drop;
-        }
-        else if (diff < -accuracy*2) {// TODO develop smoothing algorithm
-            current_drop = -current_drop;
-            if (current_drop > global_framesPerBuffers) {
+        if (diff > accuracy) {// Speed up
+            if (drop*frameSize > MAX_BUFFER_SIZE) requestFrames = MAX_BUFFER_SIZE / frameSize;
+            else requestFrames += drop;
+
+            /*requestFrames += drop;
+            if (requestFrames*frameSize > MAX_BUFFER_SIZE) {
+                requestFrames = MAX_BUFFER_SIZE/frameSize;
+                drop = requestFrames-global_framesPerBuffers;
+                debugLog("Hallo");
+            }*/
+        } else if (diff < -accuracy*2) {// Slow down
+
+            drop = -drop;
+            if (drop > global_framesPerBuffers) {
                 memset(buf_ptr, 0, maxFrameSize);// for some reason 0 doesn't work
             } else {
-                maxFrameSize = current_drop * frameSize;
+                maxFrameSize = drop * frameSize;
                 memset(buf_ptr, 0, maxFrameSize);
                 ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr + maxFrameSize,
-                                                           global_framesPerBuffers - (size_t)current_drop);
+                                                           global_framesPerBuffers - (size_t)drop);
                 if (frameCount > 0) maxFrameSize += frameCount;
             }
             SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxFrameSize);
             _checkerror(result);
             return;
+
+            /*
+            drop = -drop;
+            if (drop > requestFrames/4) drop = requestFrames/4;
+            requestFrames -= drop;
+            if (drop < 0) debugLog("TRTWTWT");*/
         }
 
         // Now we can start playing
@@ -272,32 +284,30 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
 
             // Implementing dropping or stretching of frames
             if (diff > accuracy && frameCount == requestFrames) {
-                int mod = (int)(frameCount / current_drop);
+                int mod = (int)(frameCount / drop);
                 int nFrame = 0;
                 for (int frame = 0; frame < frameCount; frame++) {
                     int from = frame * current_numChannels;
                     int to = nFrame * current_numChannels;
 
-                    if (current_drop > 0 && frame % mod == 0) {
+                    if (drop > 0 && frame % mod == 0) {
                         int next = from + current_numChannels;
                         for (int c = 0; c < current_numChannels; c++)
                             buf_ptr[to+c] = (int16_t) ((buf_ptr[from+c] + buf_ptr[next+c]) / 2);
-                        current_drop--;
+                        drop--;
                         continue;
                     }
 
                     for (int c = 0; c < current_numChannels; c++) buf_ptr[to+c] = buf_ptr[from+c];
                     nFrame++;
                 }
-                if (current_drop != 0) {
-                    debugLog("Drop should be 0");
-                }
-
                 current_playerQueuedFrames += frameCount - global_framesPerBuffers;
                 frameCount = global_framesPerBuffers;
-            } /*else if (current_drop < -frameAccuracy && frameCount == requestFrames) {
-                //frameCount += limit;
-                /*int16_t *target_ptr = tempBuffers + frameCountSize * tempBuffers_ix;
+
+            } /*else if (diff < -accuracy && frameCount == requestFrames) {
+                int16_t *target_ptr = tempBuffers + maxFrameSize * tempBuffers_ix;
+                tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
+
                 int nFrame = 0;
                 for (int frame = 0; frame < frameCount; frame++) {
                     int from = frame * current_numChannels;
@@ -305,19 +315,23 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
                     for (int c = 0; c < current_numChannels; c++)
                         target_ptr[to+c] = buf_ptr[from+c];
 
-                    if (drop < 0 && frame % 5 == 0) {
+                    if (drop > 0) {
                         int next = from + current_numChannels;
                         to += current_numChannels;
                         for (int c = 0; c < current_numChannels; c++)
                             target_ptr[to+c] = (int16_t) ((buf_ptr[from+c] + buf_ptr[next+c]) / 2);
 
-                        drop++;
+                        drop--;
                         nFrame++;
                     }
                     nFrame++;
                 }
+                if (nFrame != global_framesPerBuffers || drop != 0) {
+                    debugLog("This isn't right");
+                }
 
                 buf_ptr = target_ptr;
+                current_playerQueuedFrames -= frameCount - global_framesPerBuffers;
                 frameCount = global_framesPerBuffers;
             }*/
 
