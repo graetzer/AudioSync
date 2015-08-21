@@ -188,7 +188,7 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         mMusicProvider = new MusicProvider();
         mPackageValidator = new PackageValidator(this);
 
-        mAudioCore = new AudioCore(this);
+        mAudioCore = AudioCore.getInstance(this);
         mNSDHelper = new NsdHelper(this);
         mNSDHelper.initializeNsd();
 

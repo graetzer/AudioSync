@@ -90,7 +90,7 @@ void SenderSession::RunNetwork() {
         // will cause the network (or the client) to drop a high number of these packets.
         // TODO auto-adjust this value based on lost packets, figure out how to utilize throughput
         //uint32_t waitUs = timestampinc > 10000 ? timestampinc - 10000 : 2000;
-        RTPTime::Wait(RTPTime(0, timestampinc/2));
+        RTPTime::Wait(RTPTime(0, timestampinc/3));
 
         // Not really necessary, we are not using this
         BeginDataAccess();
@@ -106,13 +106,16 @@ void SenderSession::RunNetwork() {
         }
         EndDataAccess();
     }
+    if (written >= 0 && !isRunning) {
+        debugLog("Sender was canceled before finishing streaming");
+    }
 
     log("I'm done sending");
     BYEDestroy(RTPTime(2, 0), 0, 0);
 }
 
 int64_t SenderSession::transmissionLatency() {
-    return 5 * SECOND_MICRO;;
+    return 10 * SECOND_MICRO;;
 }
 
 /*void SenderSession::sendClockSync(int64_t playbackUSeconds) {

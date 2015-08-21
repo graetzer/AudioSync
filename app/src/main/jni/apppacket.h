@@ -53,6 +53,7 @@ typedef struct {
 // a million microseconds = one second
 #define SECOND_MICRO ((int64_t)1000000)
 int64_t audiosync_systemTimeUs();
+int64_t audiosync_monotonicTimeUs();
 int64_t audiosync_coarseTimeUs();
 int64_t audiosync_coarseAccuracyUs();
 

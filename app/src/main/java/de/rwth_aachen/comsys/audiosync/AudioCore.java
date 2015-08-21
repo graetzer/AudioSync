@@ -16,9 +16,14 @@ public class AudioCore {
     private static final String TAG = AudioCore.class.getSimpleName();
     private AssetManager mAssetManager;
     private ExecutorService mPool = Executors.newSingleThreadExecutor();
-
-    public AudioCore(Context ctx) {
+    private AudioCore(Context ctx) {
         setup(ctx.getApplicationContext());
+    }
+
+    private static AudioCore instance;
+    public static AudioCore getInstance(Context ctx) {
+        if (instance == null) instance = new AudioCore(ctx);
+        return instance;
     }
 
     @Override

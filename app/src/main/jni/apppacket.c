@@ -81,6 +81,14 @@ int64_t audiosync_systemTimeUs() {
     return now;
 }
 
+int64_t audiosync_monotonicTimeUs() {
+    struct timespec ts;
+    int err = clock_gettime(CLOCK_MONOTONIC, &ts);
+    if (err) return 0;
+    int64_t now = (int64_t)ts.tv_sec*SECOND_MICRO + ts.tv_nsec / (int64_t)1000;
+    return now;
+}
+
 int64_t audiosync_coarseTimeUs() {
     struct timespec ts;
     int err = clock_gettime(CLOCK_REALTIME_COARSE, &ts);
