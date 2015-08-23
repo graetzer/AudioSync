@@ -17,6 +17,7 @@ package de.rwth_aachen.comsys.audiosync;
 
 import android.content.Context;
 import android.media.session.PlaybackState;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.PowerManager;
 import android.text.TextUtils;
@@ -236,7 +237,6 @@ public class CastPlayback implements Playback {
         public DownloadTask(Context context,File targetFile,String dialogMessage, AudioCore audioCore, int port) {
             this.mContext = context;
             this.mTargetFile = targetFile;
-            this.mAudioCore = audioCore;
             this.port = port;
             Log.i("DownloadTask", "Constructor done");
         }
@@ -338,15 +338,18 @@ public class CastPlayback implements Playback {
             mCurrentPosition = 0;
         }
         String uri = track.getString(MusicProvider.CUSTOM_METADATA_TRACK_SOURCE);
+        if ("_metronom_".equals(musicId)) {
+            mAudioCore.startPlayingAsset(port, "metronom.mp3");
+        } else {
+            try {
+                DownloadTask task = new DownloadTask(mContext, File.createTempFile("tmp", "mp3"), "Downloading mp3", mAudioCore, port);
+                task.execute(uri);
+            } catch (IOException ignored)
+            {}
+        }
         //JSONObject customData = new JSONObject();
         //customData.put(ITEM_ID, mediaId);
         //MediaInfo media = toCastMediaMetadata(track, customData);
-        try {
-            DownloadTask task = new DownloadTask(mContext, File.createTempFile("tmp", "mp3"), "Downloading mp3", mAudioCore, port);
-            task.execute(uri);
-        } catch (IOException e)
-        {
-        }
         //mCastManager.loadMedia(media, autoPlay, mCurrentPosition, customData);
     }
 

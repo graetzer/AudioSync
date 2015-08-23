@@ -55,8 +55,8 @@ public class AudioCore {
         });
     }
 
-    public void startPlaying(int portbase) {
-        startStreamingAsset(portbase, mAssetManager, "background.mp3");
+    public void startPlayingAsset(int portbase, String name) {
+        startStreamingAsset(portbase, mAssetManager, name);
     }
 
     public void startListening(final String serverHost, final int portbase) {

@@ -51,7 +51,7 @@ static uint32_t global_framesPerBuffers;
 // Parameters for current audio stream
 static uint32_t current_samplesPerSec = 44100;
 static uint32_t current_numChannels = 1;
-static bool current_isPlaying = false;
+// Will be adjusted over time
 static int32_t current_idealRatePermille = 1000;// Playback rate default
 static int32_t current_ratePermille = 1000;
 
@@ -72,8 +72,10 @@ static moodycamel::ReaderWriterQueue<_playbackMark> current_playbackMarkQueue(81
 // ============ Some info to interact with the callback ==============
 // write / read to aligned 32bit integer is atomic, read from network thread, write from callback
 static volatile int64_t current_playerQueuedFrames = 0;// Bytes appended to the audio queue
-//static volatile int32_t current_rate = 0;
-static _playbackMark last_mark;
+static _playbackMark last_mark;// Last sync mark
+
+static bool current_isPlaying = false;
+static bool current_enableJumps = false;
 
 // For monitoring
 static int64_t current_started = 0;
@@ -200,12 +202,12 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
     // global_framesPerBuffers is the max amount of frames we read
     size_t frameSize = current_numChannels * sizeof(int16_t);
-    size_t maxFrameSize = global_framesPerBuffers * frameSize;
+    size_t maxBufferSize = global_framesPerBuffers * frameSize;
     static size_t lastFrameSize;
 
     //int16_t *old_ptr = tempBuffers + maxFrameSize * tempBuffers_ix;
     tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
-    int16_t *buf_ptr = tempBuffers + maxFrameSize * tempBuffers_ix;
+    int16_t *buf_ptr = tempBuffers + maxBufferSize * tempBuffers_ix;
 
 
     static int64_t accuracy;
@@ -218,12 +220,17 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
         current_started = nowUs;
         if (diff < -accuracy) {
             int64_t drop = (-diff * current_samplesPerSec) / SECOND_MICRO;
-            size_t rr = drop <= MAX_BUFFER_SIZE ? (size_t)drop : MAX_BUFFER_SIZE;
-            while (drop > 0) {
-                audio_utils_fifo_read(&fifo, buf_ptr, rr);
-                current_playerQueuedFrames += rr;
-                drop -= MAX_BUFFER_SIZE;
-            }
+
+            do {
+                size_t requestFrames = (size_t)drop;
+                if (requestFrames*frameSize > MAX_BUFFER_SIZE)
+                    requestFrames = MAX_BUFFER_SIZE/frameSize;
+
+                ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, requestFrames);
+                if (frameCount <= 0) break;
+                current_playerQueuedFrames += frameCount;
+                drop -= frameCount;
+            } while(drop > 0);
         }
     }
 
@@ -235,34 +242,33 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
         current_diff = diff;
 
         size_t requestFrames = global_framesPerBuffers;
-        if (diff >= accuracy) {// Speed up
-            requestFrames += drop;
-            if (requestFrames*frameSize > MAX_BUFFER_SIZE) {
-                requestFrames = MAX_BUFFER_SIZE/frameSize;
-                drop = requestFrames-global_framesPerBuffers;
-            }
-        } else if (diff <= -accuracy*2) {// Slow down
-            drop = -drop;
-             if (drop < global_framesPerBuffers) {
-                size_t ss = (size_t)drop*current_numChannels;
-                ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr+ss, requestFrames-drop);
-                if (frameCount > 0) {
-                    memset(buf_ptr, 0, ss);
-
-                    SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxFrameSize);
-                    _checkerror(result);
-
-                    current_playerQueuedFrames += frameCount;
-                    return;
+        if (current_enableJumps) {
+            if (diff >= accuracy) {// Speed up
+                requestFrames += drop;
+                if (requestFrames * frameSize > MAX_BUFFER_SIZE) {
+                    requestFrames = MAX_BUFFER_SIZE / frameSize;
+                    drop = requestFrames - global_framesPerBuffers;
                 }
-            }
-            memset(buf_ptr, 0, maxFrameSize);// for some reason 0 doesn't work
-            SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) lastFrameSize);
-            _checkerror(result);
-            return;
+            } else if (diff <= -accuracy * 2) {// Slow down
+                drop = -drop;
+                if (drop < global_framesPerBuffers) {
+                    size_t ss = (size_t) drop * current_numChannels;
+                    ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr + ss,
+                                                               requestFrames - drop);
+                    if (frameCount > 0) {
+                        memset(buf_ptr, 0, ss);
 
-            //if (drop > requestFrames/2) drop = requestFrames/2 - 1;
-            //requestFrames -= drop;
+                        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxBufferSize);
+                        _checkerror(result);
+                        current_playerQueuedFrames += frameCount;
+                        return;
+                    }
+                }
+                memset(buf_ptr, 0, maxBufferSize);// for some reason 0 doesn't work
+                SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) lastFrameSize);
+                _checkerror(result);
+                return;
+            }
         }
 
         // Now we can start playing
@@ -270,7 +276,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
         if (frameCount > 0) {
 
             // Implementing dropping or stretching of frames
-            if (diff >= accuracy && frameCount == requestFrames) {
+            if (current_enableJumps && diff >= accuracy && frameCount == requestFrames) {
                 int mod = (int)(frameCount / drop);
                 int nFrame = 0;
                 for (int frame = 0; frame < frameCount; frame++) {
@@ -323,21 +329,19 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
             }*/
 
             current_playerQueuedFrames += frameCount;
-            maxFrameSize = frameCount * current_numChannels * sizeof(int16_t);
-            lastFrameSize = maxFrameSize;
-            SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxFrameSize);
+            maxBufferSize = frameCount * current_numChannels * sizeof(int16_t);
+            lastFrameSize = maxBufferSize;
+            SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxBufferSize);
             _checkerror(result);
-
-
 
             return;
         }
         debugLog("FIFO buffer is empty");
     } else {
         // Don't actually starve the buffer, just keep it running
-        memset(buf_ptr, 0, maxFrameSize);// for some reason 0 doesn't work
+        memset(buf_ptr, 0, maxBufferSize);// for some reason 0 doesn't work
         //_generateTone(buf_ptr);
-        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxFrameSize);
+        SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxBufferSize);
         _checkerror(result);
     }
 }
@@ -438,6 +442,7 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     current_numChannels = numChannels;
     current_playerQueuedFrames = 0;
     current_isPlaying = false;
+    current_enableJumps = false;
     current_idealRatePermille = 1000;
     current_ratePermille = 1000;
     current_syncSystemTimeUs = 0;
@@ -548,11 +553,16 @@ void audioplayer_monitorPlayback() {
             int32_t realrate = (int32_t)(skew * current_ratePermille);
             int32_t offset = current_idealRatePermille - realrate;
             debugLog("Rate offset %" PRId32, offset);
-            if (labs(offset) >= 3) {
-                if (offset < 0) current_ratePermille -= 1;
-                if (offset > 0) current_ratePermille += 1;
-                (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);
+
+            if (!current_enableJumps) {
+                if (labs(offset) >= 3) {
+                    if (offset < 0) current_ratePermille -= offset/2;
+                    if (offset > 0) current_ratePermille += offset/2;
+                    (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);
+                    current_enableJumps = true;
+                }
             }
+
             lastDiff = diff;
             lastTime = nowUs;
         }
