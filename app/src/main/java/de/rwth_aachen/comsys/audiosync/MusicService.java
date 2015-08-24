@@ -172,7 +172,6 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         switchToPlayer(playback, false);
     }
 
-    public static AudioCore mAudioCore;
     public static NsdHelper mNSDHelper;
 
     /*
@@ -188,7 +187,6 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
         mMusicProvider = new MusicProvider();
         mPackageValidator = new PackageValidator(this);
 
-        mAudioCore = AudioCore.getInstance(this);
         mNSDHelper = new NsdHelper(this);
         mNSDHelper.initializeNsd();
 
@@ -258,7 +256,7 @@ public class MusicService extends MediaBrowserService implements Playback.Callba
     public void onDestroy() {
         LogHelper.d(TAG, "onDestroy");
 
-        mAudioCore.cleanup();
+        AudioCore.getInstance(this).cleanup();
         // Service is being killed, so make sure we release our resources
         handleStopRequest(null);
 

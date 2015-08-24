@@ -317,11 +317,11 @@ public class MusicProvider {
     private MediaMetadata createLocal() {
         return new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "_metronom_")
-                .putString(CUSTOM_METADATA_TRACK_SOURCE, "file:///android_asset/metronom.mp3")
+                .putString(CUSTOM_METADATA_TRACK_SOURCE, "https://dl.dropboxusercontent.com/u/58908793/metronom.mp3")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, "demo")
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, "Simon")
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, 304000)
-                .putString(MediaMetadata.METADATA_KEY_GENRE, "testing")
+                .putString(MediaMetadata.METADATA_KEY_GENRE, "Testing")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "https://upload.wikimedia.org/wikipedia/commons/0/02/Metr%C3%B3nomo_digital_Korg_MA-30.jpg")
                 .putString(MediaMetadata.METADATA_KEY_TITLE, "Metronom")
                 .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 1)

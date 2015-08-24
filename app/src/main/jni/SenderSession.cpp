@@ -90,7 +90,7 @@ void SenderSession::RunNetwork() {
         // will cause the network (or the client) to drop a high number of these packets.
         // TODO auto-adjust this value based on lost packets, figure out how to utilize throughput
         //uint32_t waitUs = timestampinc > 10000 ? timestampinc - 10000 : 2000;
-        RTPTime::Wait(RTPTime(0, timestampinc/3));
+        RTPTime::Wait(RTPTime(0, timestampinc/2));
 
         // Not really necessary, we are not using this
         BeginDataAccess();

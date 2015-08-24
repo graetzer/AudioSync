@@ -110,7 +110,6 @@ public class MainActivityFragment extends Fragment {
     }
 
     interface ICallbacks {
-        void startSending();
         void startListening();
     }
 

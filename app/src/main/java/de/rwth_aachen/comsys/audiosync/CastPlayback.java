@@ -56,14 +56,12 @@ public class CastPlayback implements Playback {
     private Callback mCallback;
     private volatile int mCurrentPosition;
     private volatile String mCurrentMediaId;
-    private AudioCore mAudioCore;
     private NsdHelper mNSDHelper;
     private Context mContext;
 
     public CastPlayback(MusicProvider musicProvider, Context mContext) {
         this.mContext = mContext;
         this.mMusicProvider = musicProvider;
-        mAudioCore = MusicService.mAudioCore;
         mNSDHelper = MusicService.mNSDHelper;
     }
 
@@ -97,8 +95,9 @@ public class CastPlayback implements Playback {
         } catch (TransientNetworkDisconnectionException | NoConnectionException e) {
             LogHelper.e(TAG, e, "Exception getting media position");
         }*/
-        if (mAudioCore != null) {
-            return (int) mAudioCore.getCurrentPresentationTime();
+        AudioCore audioCore = AudioCore.getInstance(mContext);
+        if (audioCore != null) {
+            return (int) audioCore.getCurrentPresentationTime();
         }
         return -1;
     }
@@ -139,7 +138,7 @@ public class CastPlayback implements Playback {
     @Override
     public void pause() {
         mNSDHelper.unregisterService();
-        mAudioCore.stopPlaying();
+        AudioCore.getInstance(mContext).stopPlaying();
 
         mState = PlaybackState.STATE_PAUSED;
         if (mCallback != null) {
@@ -238,6 +237,7 @@ public class CastPlayback implements Playback {
             this.mContext = context;
             this.mTargetFile = targetFile;
             this.port = port;
+            this.mAudioCore = audioCore;
             Log.i("DownloadTask", "Constructor done");
         }
 
@@ -338,11 +338,13 @@ public class CastPlayback implements Playback {
             mCurrentPosition = 0;
         }
         String uri = track.getString(MusicProvider.CUSTOM_METADATA_TRACK_SOURCE);
+        AudioCore audioCore = AudioCore.getInstance(mContext);
         if ("_metronom_".equals(musicId)) {
-            mAudioCore.startPlayingAsset(port, "metronom.mp3");
+            audioCore.startPlayingAsset(port, "metronom.mp3");
         } else {
             try {
-                DownloadTask task = new DownloadTask(mContext, File.createTempFile("tmp", "mp3"), "Downloading mp3", mAudioCore, port);
+                DownloadTask task = new DownloadTask(mContext, File.createTempFile("tmp", "mp3"),
+                        "Downloading mp3", audioCore, port);
                 task.execute(uri);
             } catch (IOException ignored)
             {}

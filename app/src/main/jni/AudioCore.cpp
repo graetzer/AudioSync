@@ -63,7 +63,7 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_deinitAudio(JNIEnv *env, jo
 }
 
 
-void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreaming(JNIEnv *env, jobject thiz,
+void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_startStreamingAsset (JNIEnv *env, jobject thiz,
                                                                     jint portbase,
                                                                     jobject assetManager,
                                                                     jstring jPath) {
@@ -131,7 +131,8 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
     int i = 0;
     if (audioSession->GotoFirstSource())
         do {
-            if (audioSession->GetCurrentSourceInfo()->IsOwnSSRC()) continue;
+            jrtplib::RTPSourceData *source = audioSession->GetCurrentSourceInfo();
+            if (source == nullptr || source->IsOwnSSRC()) continue;
             i++;
         } while (audioSession->GotoNextSource());
     if (i == 0) return NULL;
@@ -147,22 +148,24 @@ jobjectArray Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestination
     i = 0;
     if (audioSession->GotoFirstSource()) {
         do {
-            if (audioSession->GetCurrentSourceInfo()->IsOwnSSRC()) continue;
+            jrtplib::RTPSourceData *source = audioSession->GetCurrentSourceInfo();
+            if (source != nullptr && !source->IsOwnSSRC()) {
+                jrtplib::RTPSourceData *sourceData = audioSession->GetCurrentSourceInfo();
+                size_t nameLen = 0;
+                uint8_t *nameChars = sourceData->SDES_GetName(&nameLen);
+                char chars[256] = {0};
+                memcpy(chars, nameChars, nameLen);
 
-            jrtplib::RTPSourceData *sourceData = audioSession->GetCurrentSourceInfo();
-            size_t nameLen = 0;
-            uint8_t *nameChars = sourceData->SDES_GetName(&nameLen);
-            char chars[256] = {0};
-            memcpy(chars, nameChars, nameLen);
+                jobject dest = env->NewObject(clzz, init);
+                env->SetObjectField(dest, nameID, env->NewStringUTF(chars));
+                env->SetIntField(dest, jitterID, (jint) sourceData->INF_GetJitter());
+                env->SetIntField(dest, timeOffsetID, (jint)sourceData->GetClockOffsetUSeconds());
+                env->SetIntField(dest, packetsLostID, (jint) sourceData->RR_GetPacketsLost());
+                env->SetObjectArrayElement(ret, i, dest);
 
-            jobject dest = env->NewObject(clzz, init);
-            env->SetObjectField(dest, nameID, env->NewStringUTF(chars));
-            env->SetIntField(dest, jitterID, (jint) sourceData->INF_GetJitter());
-            env->SetIntField(dest, timeOffsetID, (jint)sourceData->GetClockOffsetUSeconds());
-            env->SetIntField(dest, packetsLostID, (jint) sourceData->RR_GetPacketsLost());
-            env->SetObjectArrayElement(ret, i, dest);
+                i++;
+            }
 
-            i++;
         } while (audioSession->GotoNextSource());
     }
 

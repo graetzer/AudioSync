@@ -23,7 +23,7 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
         i.putExtra(MusicService.CMD_NAME, MusicService.CMD_STOP_CASTING);
         startService(i);
 
-        mAudioCore = MusicService.mAudioCore;
+        mAudioCore = AudioCore.getInstance(this);
         mNSDHelper = MusicService.mNSDHelper;
 
         Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);
@@ -49,15 +49,6 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
         if (frag instanceof MainActivityFragment) {
             ((MainActivityFragment)frag).resetUI();
         }
-    }
-
-    @Override
-    public void startSending() {
-        // Choose a port over 5000 to avoid automatically assigned ports
-        int port = 21212;//5000 + (int) (Math.random() * 10000);
-        if (port % 2 != 0) port++;// RTP has to be an even port number
-        mNSDHelper.registerService(port);
-        mAudioCore.startPlaying(port);
     }
 
     @Override

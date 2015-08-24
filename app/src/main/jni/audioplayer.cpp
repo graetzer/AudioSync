@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <cinttypes>
-#include <cmath>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
 #include <android/log.h>
@@ -52,7 +51,6 @@ static uint32_t global_framesPerBuffers;
 static uint32_t current_samplesPerSec = 44100;
 static uint32_t current_numChannels = 1;
 // Will be adjusted over time
-static int32_t current_idealRatePermille = 1000;// Playback rate default
 static int32_t current_ratePermille = 1000;
 
 // ========= Audio Data Queue =========
@@ -70,14 +68,15 @@ typedef struct {
 static moodycamel::ReaderWriterQueue<_playbackMark> current_playbackMarkQueue(8192);
 
 // ============ Some info to interact with the callback ==============
-// write / read to aligned 32bit integer is atomic, read from network thread, write from callback
-static volatile int64_t current_playerQueuedFrames = 0;// Bytes appended to the audio queue
-static _playbackMark last_mark;// Last sync mark
+// write / read to aligned 32bit integer is atomic
 
+// Written to by monitoring thread
 static bool current_isPlaying = false;
 static bool current_enableJumps = false;
 
-// For monitoring
+// Writtten by the callback
+static volatile int64_t current_playerQueuedFrames = 0;// Bytes appended to the audio queue
+static _playbackMark last_mark;// Last sync mark
 static int64_t current_started = 0;
 static int64_t current_drop = 0;
 static int64_t current_diff = 0;
@@ -185,27 +184,12 @@ int16_t tempBuffers[MAX_BUFFER_SIZE * N_BUFFERS];
 uint32_t tempBuffers_ix = 0;
 // this callback handler is called every time a buffer finishes playing
 static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __unused) {
-
-    if (last_mark.frameCount <= current_playerQueuedFrames) {
-        while (current_playbackMarkQueue.peek() != NULL
-               && current_playbackMarkQueue.peek()->frameCount <= current_playerQueuedFrames) {
-            if(!current_playbackMarkQueue.try_dequeue(last_mark)) break;
-        }
-    }
-    // Since we won't call this at the exact right moment, adjust the actual playback time
-    int64_t correction = (SECOND_MICRO*(current_playerQueuedFrames
-                                        - last_mark.frameCount))/current_samplesPerSec;
-    int64_t playbackTimeUs = last_mark.playbackTimeUs + correction;
-    int64_t systemTimeUs = current_syncSystemTimeUs + playbackTimeUs;
-
     // Assuming PCM 16
     // Let's try to fill in the ideal amount of frames. Frame size: numChannels * sizeof(int16_t)
     // global_framesPerBuffers is the max amount of frames we read
     size_t frameSize = current_numChannels * sizeof(int16_t);
     size_t maxBufferSize = global_framesPerBuffers * frameSize;
-    static size_t lastFrameSize;
 
-    //int16_t *old_ptr = tempBuffers + maxFrameSize * tempBuffers_ix;
     tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
     int16_t *buf_ptr = tempBuffers + maxBufferSize * tempBuffers_ix;
 
@@ -236,6 +220,19 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
 
     if (current_isPlaying) {
 
+        if (last_mark.frameCount <= current_playerQueuedFrames) {
+            while (current_playbackMarkQueue.peek() != NULL
+                   && current_playbackMarkQueue.peek()->frameCount <= current_playerQueuedFrames) {
+                if(!current_playbackMarkQueue.try_dequeue(last_mark)) break;
+            }
+        }
+
+        // Since we won't call this at the exact right moment, adjust the actual playback time
+        int64_t correction = (SECOND_MICRO*(current_playerQueuedFrames
+                                            - last_mark.frameCount))/current_samplesPerSec;
+        int64_t playbackTimeUs = last_mark.playbackTimeUs + correction;
+        int64_t systemTimeUs = current_syncSystemTimeUs + playbackTimeUs;
+
         int64_t diff = nowUs - systemTimeUs;
         int64_t drop = (diff * current_samplesPerSec) / SECOND_MICRO;
         current_drop = drop;
@@ -249,7 +246,7 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
                     requestFrames = MAX_BUFFER_SIZE / frameSize;
                     drop = requestFrames - global_framesPerBuffers;
                 }
-            } else if (diff <= -accuracy * 2) {// Slow down
+            } else if (diff <= -accuracy) {// Slow down
                 drop = -drop;
                 if (drop < global_framesPerBuffers) {
                     size_t ss = (size_t) drop * current_numChannels;
@@ -264,14 +261,14 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
                         return;
                     }
                 }
-                memset(buf_ptr, 0, maxBufferSize);// for some reason 0 doesn't work
-                SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) lastFrameSize);
+                memset(buf_ptr, 1, maxBufferSize);// for some reason 0 doesn't work
+                SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxBufferSize);
                 _checkerror(result);
                 return;
             }
         }
 
-        // Now we can start playing
+        // Now we can start playing some sound
         ssize_t frameCount = audio_utils_fifo_read(&fifo, buf_ptr, requestFrames);
         if (frameCount > 0) {
 
@@ -296,41 +293,10 @@ static void _bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context __
                 }
                 current_playerQueuedFrames += frameCount - global_framesPerBuffers;
                 frameCount = global_framesPerBuffers;
-
-            } /*else if (diff <= -accuracy && frameCount == requestFrames) {
-                tempBuffers_ix = (tempBuffers_ix + 1) % N_BUFFERS;
-                int16_t *target_ptr = tempBuffers + maxFrameSize * tempBuffers_ix;
-                current_playerQueuedFrames -= drop;
-
-                int nFrame = 0;
-                for (int frame = 0; frame < frameCount; frame++) {
-                    int from = frame * current_numChannels;
-                    int to = nFrame * current_numChannels;
-                    for (int c = 0; c < current_numChannels; c++)
-                        target_ptr[to+c] = buf_ptr[from+c];
-                    nFrame++;
-
-                    if (drop > 0) {
-                        for (int c = 0; c < current_numChannels; c++)
-                            target_ptr[to+current_numChannels+c] = (int16_t) (buf_ptr[from+c]
-                                                          + buf_ptr[from+current_numChannels+c]);
-
-                        drop--;
-                        nFrame++;
-                    }
-                }
-                if (nFrame != global_framesPerBuffers
-                    || drop != 0) {
-                    debugLog("This isn't right");
-                }
-
-                buf_ptr = target_ptr;
-                frameCount = global_framesPerBuffers;
-            }*/
+            }
 
             current_playerQueuedFrames += frameCount;
             maxBufferSize = frameCount * current_numChannels * sizeof(int16_t);
-            lastFrameSize = maxBufferSize;
             SLresult result = (*bq)->Enqueue(bq, buf_ptr, (SLuint32) maxBufferSize);
             _checkerror(result);
 
@@ -440,13 +406,16 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     // Reset our entire state
     current_samplesPerSec = samplesPerSec;
     current_numChannels = numChannels;
-    current_playerQueuedFrames = 0;
-    current_isPlaying = false;
-    current_enableJumps = false;
-    current_idealRatePermille = 1000;
     current_ratePermille = 1000;
     current_syncSystemTimeUs = 0;
+    current_isPlaying = false;
+    current_enableJumps = false;
+    current_playerQueuedFrames = 0;
     memset(&last_mark, 0, sizeof(_playbackMark));
+    current_started = 0;
+    current_drop = 0;
+    current_diff = 0;
+
     // Empty queues
     if (current_playbackMarkQueue.size_approx() > 0) {
         bool cont = true;
@@ -460,11 +429,7 @@ void audioplayer_initPlayback(uint32_t samplesPerSec, uint32_t numChannels) {
     if (global_samplesPerSec != samplesPerSec) {
         // Will probably result in "AUDIO_OUTPUT_FLAG_FAST denied by client"
         debugLog("Global:%d != Current: %d", global_samplesPerSec, samplesPerSec);
-
-        /*current_idealRatePermille = (1000 * samplesPerSec)/global_samplesPerSec;// 1x speed
-        current_ratePermille = current_idealRatePermille;
-        debugLog("El cheapo resampling, slow down to %" PRId32, current_ratePermille);
-        (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);*/
+        (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) 1000);
     }
 
     // Initialize the audio buffer queue
@@ -486,8 +451,12 @@ void audioplayer_enqueuePCMFrames(const uint8_t *pcmBuffer, size_t pcmSize, int6
     size_t frameSize = current_numChannels * sizeof(uint16_t);
     size_t frames = pcmSize / frameSize;// Should always fit, MediaCodec uses interleaved 16 bit PCM
     ssize_t written = audio_utils_fifo_write(&fifo, pcmBuffer, frames);
+    // Note: playbackTimeUs corresponds to the end of the sample, not the start.
     enqueuedFrames += frames;
 
+    if (current_syncSystemTimeUs == 0) {
+        debugLog("FUUUUU");
+    }
     _playbackMark mark;
     mark.playbackTimeUs = playbackTimeUs;
     mark.frameCount = enqueuedFrames;
@@ -532,42 +501,61 @@ void audioplayer_monitorPlayback() {
     //debugLog("Mark: Sample %lu Presentation Time: %"PRId64, last_mark.frameCount, last_mark.playbackTimeUs);
     //debugLog("Sync: System time %"PRId64". Presentation Time: %"PRId64, last_sync.systemTimeUs, last_sync.playbackTimeUs);
 
-    static int64_t lastTime;
+    static int64_t lastPrint;
     static int64_t lastDiff;
+    static int64_t lastAdjustment;
+    static int64_t listenTime;
+
     if (current_isPlaying) {
-        if (lastTime == 0) {
-            int64_t diff = current_syncSystemTimeUs - current_started;
-            debugLog("Started late / early %fs", diff/1E6);
-            debugLog("Clock accuracy %" PRId64, audiosync_coarseAccuracyUs());
-        }
         int64_t nowUs = audiosync_monotonicTimeUs();
-        if (lastTime == 0) lastTime = nowUs;
+        if (lastPrint == 0) {
+            int64_t diff = current_syncSystemTimeUs - current_started;
+            debugLog("Started late / early %fs. Diff in callback %fs", diff/1E6, current_diff/1E6);
+            debugLog("Clock accuracy %" PRId64, audiosync_coarseAccuracyUs());
+            lastPrint = nowUs;
+            lastDiff = current_diff;
+            lastAdjustment = nowUs;// don't wait full 2 seconds
+            listenTime = 2*SECOND_MICRO;
+            return;
+        }
 
-        int64_t wait = nowUs - lastTime;
-        if (nowUs - lastTime > SECOND_MICRO*2) {
-            int64_t diff = current_diff;
+        int64_t wait = nowUs - lastPrint;
+        const int64_t diff = current_diff;
+        if (wait > 5*SECOND_MICRO) {
+            // Is positive if we are late, negative if we are too fast
+            debugLog("Accumulated diff: %fs", diff/1E6);
+            lastPrint = nowUs;
+        }
+        wait = nowUs - lastAdjustment;
+        if (!current_enableJumps && wait > listenTime) {
+            listenTime = 5*SECOND_MICRO;// Don't reset so often
 
-            double skew = (double)(diff-lastDiff) / wait + 1;
-            debugLog("Accumulated diff: %fs, Speed: %f. Callback drop %" PRId64,
-                     diff/1E6, skew, current_drop);
-            int32_t realrate = (int32_t)(skew * current_ratePermille);
-            int32_t offset = current_idealRatePermille - realrate;
-            debugLog("Rate offset %" PRId32, offset);
+            double vDelta = (double)(lastDiff-diff) / wait;
 
-            if (!current_enableJumps) {
-                if (labs(offset) >= 3) {
-                    if (offset < 0) current_ratePermille -= offset/2;
-                    if (offset > 0) current_ratePermille += offset/2;
-                    (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);
-                    current_enableJumps = true;
-                }
+            int32_t offset = (int32_t)(vDelta * 1000);
+            debugLog("Speed: %f. Drop %" PRId64 ". Rate offset %" PRId32, vDelta + 1.0,
+                     current_drop, offset);
+
+            int32_t newRate = current_ratePermille - offset/2;
+            if (newRate < 500) newRate = 500;
+            if (newRate > 2000) newRate = 2000;
+            if (2 <= labs((long)offset)) {
+                current_ratePermille = newRate;
+                (*playerPlayRate)->SetRate(playerPlayRate, (SLpermille) current_ratePermille);
+                debugLog("Adjusted Rate");
             }
-
+            current_enableJumps = true;
             lastDiff = diff;
-            lastTime = nowUs;
+            lastAdjustment = nowUs;
+            debugLog("Enabled Jumps");
+        } else if (current_enableJumps && wait > llabs((long long)lastDiff)) {// Use lastDiff as the jumping allowed time
+            current_enableJumps = false;
+            lastDiff = diff;
+            lastAdjustment = nowUs;
+            debugLog("Disabled Jumps");
         }
     } else  {
-        lastDiff = 0;
+        lastPrint = 0;
     }
 }
 
