@@ -120,6 +120,11 @@ void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServices(JNIEnv *env, j
     audioplayer_stopPlayback();
 }
 
+void Java_de_rwth_1aachen_comsys_audiosync_AudioCore_setDeviceLatency(JNIEnv *env, jobject thiz,  jlong latencyMs) {
+    if (latencyMs >= 0)
+        audioplayer_setDeviceLatency((int64_t)latencyMs * 1000);
+}
+
 /*
  * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
  * Method:    getRtpSourceCount

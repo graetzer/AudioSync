@@ -2,13 +2,17 @@ package de.rwth_aachen.comsys.audiosync;
 
 import android.app.Activity;
 import android.app.Fragment;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ListView;
+import android.widget.SeekBar;
 import android.widget.TextView;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -16,40 +20,56 @@ import java.util.Arrays;
 /**
  * A placeholder fragment containing a simple view.
  */
-public class MainActivityFragment extends Fragment {
+public class StatisticsFragment extends Fragment {
     private ICallbacks mCallbacks;
-    private TextView mStatusTV;
     private Button mListenButton;
+    private SharedPreferences mPrefs;
+    private static final String PREF_DEVICE_LATENCY = "PREF_DEVICE_LATENCY";
 
-    public MainActivityFragment() {
+    public StatisticsFragment() {
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.fragment_main, container, false);
+        return inflater.inflate(R.layout.fragment_statistics, container, false);
     }
 
     @Override
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        mStatusTV = (TextView) view.findViewById(R.id.textView_status);
+        mPrefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        int latencyMs = mPrefs.getInt(PREF_DEVICE_LATENCY, 0);
+        AudioCore.getInstance(getActivity()).setDeviceLatency(latencyMs);
+
         mListenButton = (Button) view.findViewById(R.id.button_listen);
-       /* mSendButton = (Button) view.findViewById(R.id.button_send);
-        mSendButton.setOnClickListener(new View.OnClickListener() {
+        final TextView numberTv = (TextView) view.findViewById(R.id.textView_latency);
+        numberTv.setText("Device Latency: " + latencyMs + "ms");
+        SeekBar seekbar = (SeekBar) view.findViewById(R.id.seekBar_latency);
+        seekbar.setMax(500);// ms
+        seekbar.setProgress(latencyMs);
+        seekbar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
-            public void onClick(View v) {
-                mStatusTV.setText("Sending");
-                mListenButton.setEnabled(false);
-                mSendButton.setEnabled(false);
-                mCallbacks.startSending();
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                numberTv.setText("Device Latency: " + progress + "ms");
             }
-        });*/
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                int progress = seekBar.getProgress();
+                mPrefs.edit().putInt(PREF_DEVICE_LATENCY, progress).apply();
+                AudioCore.getInstance(getActivity()).setDeviceLatency(progress);
+            }
+        });
 
         mListenButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mStatusTV.setText("Listening");
                 mListenButton.setEnabled(false);
                 mCallbacks.startListening();
             }
@@ -69,7 +89,7 @@ public class MainActivityFragment extends Fragment {
     }
 
     AudioSourcesAdapter rtpSourceListAdapter;
-    final ArrayList<AudioDestination> rtpSourceList = new ArrayList<AudioDestination>();
+    final ArrayList<AudioDestination> rtpSourceList = new ArrayList<>();
 
     public void updateStats() {
         while(true) {
@@ -120,8 +140,6 @@ public class MainActivityFragment extends Fragment {
     }
 
     public void resetUI() {
-        mStatusTV.setText("Select an action");
-        //mSendButton.setEnabled(true);
         mListenButton.setEnabled(true);
     }
 }

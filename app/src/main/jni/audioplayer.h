@@ -39,6 +39,10 @@ void audioplayer_syncPlayback(int64_t systemTimeUs, int64_t playbackTimeUs);
  * if negative, the server clock is behind the local clock.
  */
 void audioplayer_setSystemTimeOffset(int64_t offsetUs);
+/**
+ * The latency from the moment the audio data is written to the systems
+ */
+void audioplayer_setDeviceLatency(int64_t latencyUs);
 // Call this regulary if you don't call any other methods here regulary instead
 void audioplayer_monitorPlayback();
 int64_t audioplayer_currentPlaybackTimeUs();

@@ -339,8 +339,9 @@ public class CastPlayback implements Playback {
         }
         String uri = track.getString(MusicProvider.CUSTOM_METADATA_TRACK_SOURCE);
         AudioCore audioCore = AudioCore.getInstance(mContext);
-        if ("_metronom_".equals(musicId)) {
-            audioCore.startPlayingAsset(port, "metronom.mp3");
+        if (musicId.startsWith(MusicProvider.LOCAL_PREFIX)) {
+            audioCore.startPlayingAsset(port,
+                    track.getString(MusicProvider.CUSTOM_METADATA_ASSET_FILE));
         } else {
             try {
                 DownloadTask task = new DownloadTask(mContext, File.createTempFile("tmp", "mp3"),

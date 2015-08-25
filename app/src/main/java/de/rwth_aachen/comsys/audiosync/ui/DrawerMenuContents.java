@@ -18,6 +18,7 @@ package de.rwth_aachen.comsys.audiosync.ui;
 import android.content.Context;
 
 import de.rwth_aachen.comsys.audiosync.R;
+import de.rwth_aachen.comsys.audiosync.StatisticsActivity;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -39,7 +40,7 @@ public class DrawerMenuContents {
         items.add(populateDrawerItem(ctx.getString(R.string.drawer_allmusic_title),
             R.drawable.ic_allmusic_black_24dp));
 
-        activities[1] = de.rwth_aachen.comsys.audiosync.MainActivity.class;
+        activities[1] = StatisticsActivity.class;
         items.add(populateDrawerItem(ctx.getString(R.string.drawer_statistics_title),
             R.drawable.ic_playlist_music_black_24dp));
     }

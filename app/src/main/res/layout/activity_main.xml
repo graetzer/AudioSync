@@ -18,10 +18,10 @@ tools:context=".MusicPlayerActivity">
     <fragment xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:tools="http://schemas.android.com/tools"
         android:id="@+id/fragment"
-        android:name="de.rwth_aachen.comsys.audiosync.MainActivityFragment"
+        android:name="de.rwth_aachen.comsys.audiosync.StatisticsFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        tools:layout="@layout/fragment_main" />
+        tools:layout="@layout/fragment_statistics" />
 
     <android.support.v7.widget.CardView
         android:id="@+id/controls_container"

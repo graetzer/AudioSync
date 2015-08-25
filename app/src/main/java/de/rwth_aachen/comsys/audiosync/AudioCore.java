@@ -86,6 +86,8 @@ public class AudioCore {
         });
     }
 
+    public native void setDeviceLatency(long latencyMs);
+
     private native void initAudio(int samplesPerSec, int framesPerBuffer);
     private native void deinitAudio();
 

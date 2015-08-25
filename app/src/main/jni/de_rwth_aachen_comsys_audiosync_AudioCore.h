@@ -56,6 +56,14 @@ JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_stopServi
   (JNIEnv *, jobject);
 
 /*
+ * Class:     de_rwth_aachen_comsys_audiosync_AudioCore
+ * Method:    setDeviceLatency
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_de_rwth_1aachen_comsys_audiosync_AudioCore_setDeviceLatency
+        (JNIEnv *, jobject,  jlong);
+
+/*
  * Class:     Java_de_rwth_1aachen_comsys_audiosync_AudioCore_getAudioDestinations
  * Method:    getRtpSourceCount
  * Signature: ()[Lde/rwth_aachen/comsys/audiosync/AudioDestination;

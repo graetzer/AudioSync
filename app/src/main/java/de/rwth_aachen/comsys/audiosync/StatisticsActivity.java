@@ -9,7 +9,7 @@ import android.widget.Toast;
 import de.rwth_aachen.comsys.audiosync.ui.BaseActivity;
 
 
-public class MainActivity extends BaseActivity implements MainActivityFragment.ICallbacks {
+public class StatisticsActivity extends BaseActivity implements StatisticsFragment.ICallbacks {
     private AudioCore mAudioCore;
     private NsdHelper mNSDHelper;
 
@@ -27,8 +27,8 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
         mNSDHelper = MusicService.mNSDHelper;
 
         Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);
-        if (frag instanceof MainActivityFragment) {
-            ((MainActivityFragment)frag).setAudioCore(mAudioCore);
+        if (frag instanceof StatisticsFragment) {
+            ((StatisticsFragment)frag).setAudioCore(mAudioCore);
         }
 
         initializeToolbar();
@@ -46,8 +46,8 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
         mAudioCore.stopPlaying();
 
         Fragment frag = getFragmentManager().findFragmentById(R.id.fragment);
-        if (frag instanceof MainActivityFragment) {
-            ((MainActivityFragment)frag).resetUI();
+        if (frag instanceof StatisticsFragment) {
+            ((StatisticsFragment)frag).resetUI();
         }
     }
 
@@ -62,7 +62,7 @@ public class MainActivity extends BaseActivity implements MainActivityFragment.I
                 if (host != null && port % 2 == 0) {
                     mAudioCore.startListening(host, port);
                 } else {
-                    Toast.makeText(MainActivity.this, "Something is fishy, RTP ports must be even", Toast.LENGTH_LONG).show();
+                    Toast.makeText(StatisticsActivity.this, "Something is fishy, RTP ports must be even", Toast.LENGTH_LONG).show();
                 }
             }
         });

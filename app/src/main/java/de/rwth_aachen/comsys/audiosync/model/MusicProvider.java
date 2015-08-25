@@ -50,6 +50,8 @@ public class MusicProvider {
         "http://storage.googleapis.com/automotive-media/music.json";
 
     public static final String CUSTOM_METADATA_TRACK_SOURCE = "__SOURCE__";
+    public static final String CUSTOM_METADATA_ASSET_FILE = "__ASSET__";
+    public static final String LOCAL_PREFIX = "__local_";
 
     private static final String JSON_MUSIC = "music";
     private static final String JSON_TITLE = "title";
@@ -82,6 +84,10 @@ public class MusicProvider {
         mMusicListByGenre = new ConcurrentHashMap<>();
         mMusicListById = new ConcurrentHashMap<>();
         mFavoriteTracks = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+        createLocal("background.mp3");
+        createLocal("mandelsson.mp3");
+        createLocal("metronom.mp3");
     }
 
     /**
@@ -245,6 +251,8 @@ public class MusicProvider {
                 String path = CATALOG_URL.substring(0, slashPos + 1);
                 JSONObject jsonObj = fetchJSONFromUrl(CATALOG_URL);
                 if (jsonObj == null) {
+                    buildListsByGenre();// TODO only for testing
+                    mCurrentState = State.INITIALIZED;
                     return;
                 }
                 JSONArray tracks = jsonObj.getJSONArray(JSON_MUSIC);
@@ -254,9 +262,6 @@ public class MusicProvider {
                         String musicId = item.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
                         mMusicListById.put(musicId, new MutableMediaMetadata(musicId, item));
                     }
-                    MediaMetadata item = createLocal();
-                    String musicId = item.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
-                    mMusicListById.put(musicId, new MutableMediaMetadata(musicId, item));
                     buildListsByGenre();
                 }
                 mCurrentState = State.INITIALIZED;
@@ -314,19 +319,23 @@ public class MusicProvider {
                 .build();
     }
 
-    private MediaMetadata createLocal() {
-        return new MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "_metronom_")
-                .putString(CUSTOM_METADATA_TRACK_SOURCE, "https://dl.dropboxusercontent.com/u/58908793/metronom.mp3")
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, "demo")
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, "Simon")
+    private void createLocal(String file) {
+        MediaMetadata item =  new MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, LOCAL_PREFIX+file)
+                .putString(CUSTOM_METADATA_TRACK_SOURCE, "https://dl.dropboxusercontent.com/u/58908793/"+file)
+                .putString(CUSTOM_METADATA_ASSET_FILE, file)
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Demo")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, "Simon G")
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, 304000)
                 .putString(MediaMetadata.METADATA_KEY_GENRE, "Testing")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, "https://upload.wikimedia.org/wikipedia/commons/0/02/Metr%C3%B3nomo_digital_Korg_MA-30.jpg")
-                .putString(MediaMetadata.METADATA_KEY_TITLE, "Metronom")
+                .putString(MediaMetadata.METADATA_KEY_TITLE, file)
                 .putLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER, 1)
                 .putLong(MediaMetadata.METADATA_KEY_NUM_TRACKS, 1)
                 .build();
+
+        String musicId = item.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
+        mMusicListById.put(musicId, new MutableMediaMetadata(musicId, item));
     }
 
     /**
