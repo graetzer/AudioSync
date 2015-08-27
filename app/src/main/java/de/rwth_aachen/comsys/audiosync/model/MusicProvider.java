@@ -85,6 +85,7 @@ public class MusicProvider {
         mMusicListById = new ConcurrentHashMap<>();
         mFavoriteTracks = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
+        createLocal("bis_spaeter.mp3");
         createLocal("background.mp3");
         createLocal("mandelsson.mp3");
         createLocal("metronom.mp3");
